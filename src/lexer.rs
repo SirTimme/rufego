@@ -24,7 +24,7 @@ impl<'a> Lexer<'a> {
         token
     }
 
-    fn peek(&mut self) -> char {
+    fn peek(&self) -> char {
         if self.index + 1 >= self.source.len() {
             ' '
         } else {
