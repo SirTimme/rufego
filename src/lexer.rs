@@ -1,11 +1,11 @@
-use token::Token;
+use token::{Token, TokenInfo, TokenType};
 
 struct Lexer<'a> {
     source: &'a str,
     index: usize,
 }
 
-impl Lexer<'_> {
+impl<'a> Lexer<'a> {
     fn new(source: &str) -> Lexer {
         Lexer { source, index: 0 }
     }
@@ -31,39 +31,56 @@ impl Lexer<'_> {
             self.source.chars().nth(self.index + 1).unwrap()
         }
     }
+
+    fn token_info(&self, size: usize) -> TokenInfo<'a> {
+        TokenInfo {
+            content: self.source,
+            size,
+            start_index: self.index
+        }
+    }
 }
 
-pub fn tokenize(source: &str) -> Vec<Token> {
+pub(crate) fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut lexer = Lexer::new(source);
 
     while !lexer.is_at_end() {
-        let token = match lexer.current() {
-            '(' => Some(Token::LeftParenthesis),
-            ')' => Some(Token::RightParenthesis),
-            '{' => Some(Token::LeftCurlyBrace),
-            '}' => Some(Token::RightCurlyBrace),
-            ',' => Some(Token::Comma),
-            '-' => Some(Token::Minus),
-            '+' => Some(Token::Plus),
-            '/' => Some(Token::Slash),
-            '*' => Some(Token::Star),
-            '.' => Some(Token::Dot),
+        let token_type = match lexer.current() {
+            '(' => Some(TokenType::LeftParenthesis),
+            ')' => Some(TokenType::RightParenthesis),
+            '{' => Some(TokenType::LeftCurlyBrace),
+            '}' => Some(TokenType::RightCurlyBrace),
+            ',' => Some(TokenType::Comma),
+            '-' => Some(TokenType::Minus),
+            '+' => Some(TokenType::Plus),
+            '/' => Some(TokenType::Slash),
+            '*' => Some(TokenType::Star),
+            '.' => Some(TokenType::Dot),
             _ => None,
         };
 
-        if let Some(token_type) = token {
-            tokens.push(token_type);
+        if let Some(token_type) = token_type {
+            tokens.push(Token {
+                token_type,
+                token_info: lexer.token_info(1)
+            });
             lexer.advance();
             continue;
         }
 
         if lexer.current() == '!' {
             if lexer.peek() == '=' {
-                tokens.push(Token::ExclamationMarkEquals);
+                tokens.push(Token {
+                    token_type: TokenType::ExclamationMarkEquals,
+                    token_info: lexer.token_info(2)
+                });
                 lexer.advance();
             } else {
-                tokens.push(Token::ExclamationMark)
+                tokens.push(Token {
+                    token_type: TokenType::ExclamationMark,
+                    token_info: lexer.token_info(1)
+                });
             }
             lexer.advance();
             continue;
@@ -71,10 +88,16 @@ pub fn tokenize(source: &str) -> Vec<Token> {
 
         if lexer.current() == '=' {
             if lexer.peek() == '=' {
-                tokens.push(Token::EqualsEquals);
+                tokens.push(Token {
+                    token_type: TokenType::EqualsEquals,
+                    token_info: lexer.token_info(2)
+                });
                 lexer.advance();
             } else {
-                tokens.push(Token::Equals)
+                tokens.push(Token {
+                    token_type: TokenType::Equals,
+                    token_info: lexer.token_info(1)
+                });
             }
             lexer.advance();
             continue;
@@ -82,10 +105,16 @@ pub fn tokenize(source: &str) -> Vec<Token> {
 
         if lexer.current() == '<' {
             if lexer.peek() == '=' {
-                tokens.push(Token::LessThanEquals);
+                tokens.push(Token {
+                    token_type: TokenType::LessThanEquals,
+                    token_info: lexer.token_info(2)
+                });
                 lexer.advance();
             } else {
-                tokens.push(Token::LessThan)
+                tokens.push(Token {
+                    token_type: TokenType::LessThan,
+                    token_info: lexer.token_info(1)
+                });
             }
             lexer.advance();
             continue;
@@ -93,19 +122,16 @@ pub fn tokenize(source: &str) -> Vec<Token> {
 
         if lexer.current() == '>' {
             if lexer.peek() == '=' {
-                tokens.push(Token::GreaterThanEquals);
+                tokens.push(Token {
+                    token_type: TokenType::GreaterThanEquals,
+                    token_info: lexer.token_info(2)
+                });
                 lexer.advance();
             } else {
-                tokens.push(Token::GreaterThan)
-            }
-            lexer.advance();
-            continue;
-        }
-
-        // ignore newlines
-        if lexer.current() == '\'' {
-            if lexer.peek() == 'n' {
-                lexer.advance();
+                tokens.push(Token {
+                    token_type: TokenType::GreaterThan,
+                    token_info: lexer.token_info(1)
+                });
             }
             lexer.advance();
             continue;
@@ -117,7 +143,10 @@ pub fn tokenize(source: &str) -> Vec<Token> {
         }
     }
 
-    tokens.push(Token::EndOfFile);
+    tokens.push(Token {
+        token_type: TokenType::EndOfFile,
+        token_info: lexer.token_info(0)
+    });
 
     tokens
 }

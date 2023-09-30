@@ -11,6 +11,6 @@ fn main() {
 
 fn run(source: &str) {
     for token in lexer::tokenize(source) {
-        println!("{}", token)
+        println!("{:?}", token)
     }
 }

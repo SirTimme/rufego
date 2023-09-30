@@ -1,7 +1,5 @@
-use std::fmt::{Display, Formatter};
-
 #[derive(Debug)]
-pub enum Token {
+pub(crate) enum TokenType {
     // single-char token
     LeftParenthesis,
     RightParenthesis,
@@ -42,8 +40,17 @@ pub enum Token {
     EndOfFile,
 }
 
-impl Display for Token {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
+#[derive(Debug)]
+pub(crate) struct TokenInfo<'a> {
+    pub(crate) content: &'a str,
+    pub(crate) size: usize,
+    pub(crate) start_index: usize,
 }
+
+#[derive(Debug)]
+pub(crate) struct Token<'a> {
+    pub(crate) token_type: TokenType,
+    pub(crate) token_info: TokenInfo<'a>,
+}
+
+
