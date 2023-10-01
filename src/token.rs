@@ -53,5 +53,3 @@ pub(crate) struct Token<'a> {
     pub(crate) token_type: TokenType,
     pub(crate) token_info: TokenInfo<'a>,
 }
-
-

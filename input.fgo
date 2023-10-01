@@ -7,5 +7,5 @@ func (this pos) Apply(x int) bool {
 }
 
 func main() {
-
+    var bla = "Hello"
 }
