@@ -25,6 +25,8 @@ pub(crate) enum TokenType {
 
     // literals
     Identifier,
+    Number,
+    String,
 
     // keywords
     Function,
@@ -36,7 +38,7 @@ pub(crate) enum TokenType {
     Return,
 
     // special
-    EndOfFile,
+    EndOfFile
 }
 
 #[derive(Debug)]

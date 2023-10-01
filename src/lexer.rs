@@ -2,7 +2,7 @@ use token::{Token, TokenInfo, TokenType};
 
 struct Lexer<'a> {
     source: &'a str,
-    index: usize,
+    index: usize
 }
 
 impl<'a> Lexer<'a> {
@@ -10,12 +10,12 @@ impl<'a> Lexer<'a> {
         Lexer { source, index: 0 }
     }
 
-    fn is_at_end(&self) -> bool {
+    fn is_end_of_file(&self) -> bool {
         self.index >= self.source.len()
     }
 
     fn current(&self) -> char {
-        if self.is_at_end() {
+        if self.is_end_of_file() {
             ' '
         } else {
             self.source.chars().nth(self.index).unwrap()
@@ -43,13 +43,21 @@ impl<'a> Lexer<'a> {
             start_index: self.index
         }
     }
+
+    fn token_info_index(&self, size: usize, start_index: usize) -> TokenInfo<'a> {
+        TokenInfo {
+            content: self.source,
+            size,
+            start_index
+        }
+    }
 }
 
 pub(crate) fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut lexer = Lexer::new(source);
 
-    while !lexer.is_at_end() {
+    while !lexer.is_end_of_file() {
         let token_type = match lexer.current() {
             '(' => Some(TokenType::LeftParenthesis),
             ')' => Some(TokenType::RightParenthesis),
@@ -62,7 +70,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             '*' => Some(TokenType::Star),
             '.' => Some(TokenType::Dot),
             ';' => Some(TokenType::Semicolon),
-            _ => None,
+            _ => None
         };
 
         if let Some(token_type) = token_type {
@@ -142,6 +150,38 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
+        if lexer.current().is_numeric() {
+            let start_index = lexer.index;
+            lexer.advance();
+
+            while lexer.current().is_numeric() {
+                lexer.advance();
+            }
+
+            tokens.push(Token {
+                token_type: TokenType::Number,
+                token_info: lexer.token_info_index(lexer.index - start_index, start_index),
+            });
+            continue;
+        }
+
+        if lexer.current() == '"' {
+            let start_index = lexer.index;
+            lexer.advance();
+
+            while lexer.current() != '"' && !lexer.is_end_of_file() {
+                lexer.advance();
+            }
+
+            lexer.advance();
+
+            tokens.push(Token {
+                token_type: TokenType::String,
+                token_info: lexer.token_info_index(lexer.index - start_index - 2, start_index + 1)
+            });
+            continue;
+        }
+
         if lexer.current().is_alphanumeric() {
             let start_index = lexer.index;
             lexer.advance();
@@ -166,11 +206,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
 
             tokens.push(Token {
                 token_type,
-                token_info: TokenInfo {
-                    content: lexer.source,
-                    size,
-                    start_index,
-                },
+                token_info: lexer.token_info(size)
             });
             continue;
         }
