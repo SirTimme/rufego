@@ -11,6 +11,7 @@ pub(crate) enum TokenType {
     Slash,
     Star,
     Dot,
+    Semicolon,
 
     // one or two char token
     ExclamationMark,
@@ -24,8 +25,6 @@ pub(crate) enum TokenType {
 
     // literals
     Identifier,
-    String,
-    Number,
 
     // keywords
     Function,

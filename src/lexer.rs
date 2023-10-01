@@ -15,7 +15,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn current(&self) -> char {
-        self.source.chars().nth(self.index).unwrap()
+        if self.is_at_end() {
+            ' '
+        } else {
+            self.source.chars().nth(self.index).unwrap()
+        }
     }
 
     fn advance(&mut self) -> char {
@@ -57,6 +61,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             '/' => Some(TokenType::Slash),
             '*' => Some(TokenType::Star),
             '.' => Some(TokenType::Dot),
+            ';' => Some(TokenType::Semicolon),
             _ => None,
         };
 
@@ -137,7 +142,39 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             continue;
         }
 
-        // ignore whitespace
+        if lexer.current().is_alphanumeric() {
+            let start_index = lexer.index;
+            lexer.advance();
+
+            while lexer.current().is_alphanumeric() {
+                lexer.advance();
+            }
+
+            let size = lexer.index - start_index;
+            let lexeme = &lexer.source[start_index..][..size];
+
+            let token_type = match lexeme {
+                "package" => TokenType::Package,
+                "struct" => TokenType::Struct,
+                "interface" => TokenType::Interface,
+                "func" => TokenType::Function,
+                "return" => TokenType::Return,
+                "type" => TokenType::Type,
+                "var" => TokenType::Var,
+                _ => TokenType::Identifier
+            };
+
+            tokens.push(Token {
+                token_type,
+                token_info: TokenInfo {
+                    content: lexer.source,
+                    size,
+                    start_index,
+                },
+            });
+            continue;
+        }
+
         if lexer.current().is_whitespace() {
             lexer.advance();
         }
