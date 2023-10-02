@@ -36,19 +36,19 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn token_info(&self, size: usize) -> TokenInfo<'a> {
+    fn info(&self, length: usize) -> TokenInfo<'a> {
         TokenInfo {
-            content: self.source,
-            size,
-            start_index: self.index
+            source: self.source,
+            length,
+            start: self.index
         }
     }
 
-    fn token_info_index(&self, size: usize, start_index: usize) -> TokenInfo<'a> {
+    fn info_at(&self, length: usize, start: usize) -> TokenInfo<'a> {
         TokenInfo {
-            content: self.source,
-            size,
-            start_index
+            source: self.source,
+            length,
+            start
         }
     }
 }
@@ -76,7 +76,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
         if let Some(token_type) = token_type {
             tokens.push(Token {
                 token_type,
-                token_info: lexer.token_info(1)
+                token_info: lexer.info(1)
             });
             lexer.advance();
             continue;
@@ -86,13 +86,13 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             if lexer.peek() == '=' {
                 tokens.push(Token {
                     token_type: TokenType::ExclamationMarkEquals,
-                    token_info: lexer.token_info(2)
+                    token_info: lexer.info(2)
                 });
                 lexer.advance();
             } else {
                 tokens.push(Token {
                     token_type: TokenType::ExclamationMark,
-                    token_info: lexer.token_info(1)
+                    token_info: lexer.info(1)
                 });
             }
             lexer.advance();
@@ -103,13 +103,13 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             if lexer.peek() == '=' {
                 tokens.push(Token {
                     token_type: TokenType::EqualsEquals,
-                    token_info: lexer.token_info(2)
+                    token_info: lexer.info(2)
                 });
                 lexer.advance();
             } else {
                 tokens.push(Token {
                     token_type: TokenType::Equals,
-                    token_info: lexer.token_info(1)
+                    token_info: lexer.info(1)
                 });
             }
             lexer.advance();
@@ -120,13 +120,13 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             if lexer.peek() == '=' {
                 tokens.push(Token {
                     token_type: TokenType::LessThanEquals,
-                    token_info: lexer.token_info(2)
+                    token_info: lexer.info(2)
                 });
                 lexer.advance();
             } else {
                 tokens.push(Token {
                     token_type: TokenType::LessThan,
-                    token_info: lexer.token_info(1)
+                    token_info: lexer.info(1)
                 });
             }
             lexer.advance();
@@ -137,13 +137,13 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
             if lexer.peek() == '=' {
                 tokens.push(Token {
                     token_type: TokenType::GreaterThanEquals,
-                    token_info: lexer.token_info(2)
+                    token_info: lexer.info(2)
                 });
                 lexer.advance();
             } else {
                 tokens.push(Token {
                     token_type: TokenType::GreaterThan,
-                    token_info: lexer.token_info(1)
+                    token_info: lexer.info(1)
                 });
             }
             lexer.advance();
@@ -151,22 +151,24 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
         }
 
         if lexer.current().is_numeric() {
-            let start_index = lexer.index;
+            let start = lexer.index;
             lexer.advance();
 
             while lexer.current().is_numeric() {
                 lexer.advance();
             }
 
+            let length = lexer.index - start;
+
             tokens.push(Token {
                 token_type: TokenType::Number,
-                token_info: lexer.token_info_index(lexer.index - start_index, start_index),
+                token_info: lexer.info_at(length, start),
             });
             continue;
         }
 
         if lexer.current() == '"' {
-            let start_index = lexer.index;
+            let start = lexer.index;
             lexer.advance();
 
             while lexer.current() != '"' && !lexer.is_end_of_file() {
@@ -175,23 +177,26 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
 
             lexer.advance();
 
+            let start = start + 1;
+            let length = lexer.index - start - 2;
+
             tokens.push(Token {
                 token_type: TokenType::String,
-                token_info: lexer.token_info_index(lexer.index - start_index - 2, start_index + 1)
+                token_info: lexer.info_at(length, start)
             });
             continue;
         }
 
         if lexer.current().is_alphanumeric() {
-            let start_index = lexer.index;
+            let start = lexer.index;
             lexer.advance();
 
             while lexer.current().is_alphanumeric() {
                 lexer.advance();
             }
 
-            let size = lexer.index - start_index;
-            let lexeme = &lexer.source[start_index..][..size];
+            let length = lexer.index - start;
+            let lexeme = &lexer.source[start..][..length];
 
             let token_type = match lexeme {
                 "package" => TokenType::Package,
@@ -206,7 +211,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
 
             tokens.push(Token {
                 token_type,
-                token_info: lexer.token_info(size)
+                token_info: lexer.info_at(length, start)
             });
             continue;
         }
@@ -218,7 +223,7 @@ pub(crate) fn tokenize(source: &str) -> Vec<Token> {
 
     tokens.push(Token {
         token_type: TokenType::EndOfFile,
-        token_info: lexer.token_info(0)
+        token_info: lexer.info(0)
     });
 
     tokens

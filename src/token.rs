@@ -43,9 +43,9 @@ pub(crate) enum TokenType {
 
 #[derive(Debug)]
 pub(crate) struct TokenInfo<'a> {
-    pub(crate) content: &'a str,
-    pub(crate) size: usize,
-    pub(crate) start_index: usize,
+    pub(crate) source: &'a str,
+    pub(crate) length: usize,
+    pub(crate) start: usize,
 }
 
 #[derive(Debug)]
