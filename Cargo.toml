@@ -3,3 +3,4 @@ name = "rustle"
 version = "0.0.1"
 
 [dependencies]
+logos = "0.13.0"

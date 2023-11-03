@@ -1,16 +1,15 @@
-mod lexer;
+extern crate logos;
+
 mod token;
 
 use std::fs::read_to_string;
+use logos::Logos;
+use token::Token;
 
 fn main() {
     if let Ok(source) = read_to_string("input.fgo") {
-        run(&source);
-    }
-}
+        let tokens: Vec<_> = Token::lexer(&source).collect();
 
-fn run(source: &str) {
-    for token in lexer::tokenize(source) {
-        println!("{:?}", token)
+        println!("{:?}", tokens);
     }
 }
