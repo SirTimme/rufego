@@ -1,8 +1,8 @@
 use logos::Logos;
 
-#[derive(Logos, Debug)]
+#[derive(Logos, Debug, Copy, Clone)]
 #[logos(skip r"[ \r\t\n\f]+")]
-pub(crate) enum Token {
+pub enum Token<'a> {
     #[token("(")]
     LeftParenthesis,
     #[token(")")]
@@ -41,10 +41,10 @@ pub(crate) enum Token {
     GreaterThan,
     #[token("<")]
     LessThan,
-    #[regex("[a-zA-Z][a-zA-Z0-9]*")]
-    Identifier,
-    #[regex("[0-9]+")]
-    Number,
+    #[regex("[a-zA-Z][a-zA-Z0-9]*", |lex| lex.slice())]
+    Identifier(&'a str),
+    #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
+    Number(u64),
     #[regex("\"[a-zA-Z0-9 ]+\"")]
     String,
     #[token("func")]
