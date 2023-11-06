@@ -1,5 +1,5 @@
 [package]
-name = "rustle"
+name = "rufego"
 version = "0.0.1"
 
 [dependencies]
