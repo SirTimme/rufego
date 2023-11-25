@@ -1,1 +1,4 @@
-12 * 48 + x.(d) + r.g
+func hello() {
+     var bla = 5 * 10
+     var y = 10 + 3
+}

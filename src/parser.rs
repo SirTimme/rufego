@@ -2,35 +2,60 @@ use Token;
 
 peg::parser!(
     pub grammar language<'a>() for [Token<'a>] {
-        pub rule expr() -> Expr<'a> = precedence!{
-            e1:(@) [Token::Plus] e2:@ { Expr::BinOp(Box::new(e1), BinOp::Add, Box::new(e2)) }
+        pub rule expr() -> Expression<'a> = precedence!{
+            e1:(@) [Token::Plus] e2:@ {
+                Expression::BinOp(Box::new(e1), BinOp::Add, Box::new(e2))
+            }
             --
-            e1:(@) [Token::Star] e2:@ { Expr::BinOp(Box::new(e1), BinOp::Mul, Box::new(e2)) }
+            e1:(@) [Token::Star] e2:@ {
+                Expression::BinOp(Box::new(e1), BinOp::Mul, Box::new(e2))
+            }
             --
-            e1:var() [Token::Dot] [Token::LeftParenthesis] e2:var() [Token::RightParenthesis] { Expr::TypeAssertion(Box::new(e1), Box::new(e2)) }
-            e1:var() [Token::Dot] e2:var() { Expr::Select(Box::new(e1), Box::new(e2)) }
-            --
-            v:var() { v }
-            n:number() { n }
+            [Token::Number(number)] {
+                Expression::Number(number)
+            }
+            [Token::LeftParenthesis] expression:expr() [Token::RightParenthesis] {
+                expression
+            }
         }
 
-        rule var() -> Expr<'a>
-            = [Token::Identifier(x)] { Expr::Var(x) }
-
-        rule number() -> Expr<'a>
-            = [Token::Number(n)] { Expr::Number(n) }
+        pub rule stmt() -> Statement<'a> = precedence!{
+            [Token::Var] [Token::Identifier(name)] [Token::Equals] expression:expr() {
+                Statement::Assignment(name, expression)
+            }
+            [Token::Function] [Token::Identifier(name)] [Token::LeftParenthesis] [Token::RightParenthesis] [Token::LeftCurlyBrace] body:stmt()* [Token::RightCurlyBrace] {
+                Statement::Function(name, body)
+            }
+            [Token::Package] [Token::Identifier(name)] [Token::Semicolon] {
+                Statement::Package(name)
+            }
+        }
     }
 );
 
+pub enum Node {
+    Expression,
+    Statement
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Expr<'a> {
+pub enum Expression<'a> {
     Number(u64),
-    Var(&'a str),                                       // x
     MethodCall,                                         // e.m(e...)
     StructureLiteral,                                   // t{e...}
-    Select(Box<Expr<'a>>, Box<Expr<'a>>),                             // e.f
-    TypeAssertion(Box<Expr<'a>>, Box<Expr<'a>>),        // e.(t)
-    BinOp(Box<Expr<'a>>, BinOp, Box<Expr<'a>>),
+    Select(Box<Expression<'a>>, Box<Expression<'a>>),               // e.f
+    TypeAssertion(Box<Expression<'a>>, Box<Expression<'a>>),        // e.(t)
+    BinOp(Box<Expression<'a>>, BinOp, Box<Expression<'a>>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Statement<'a> {
+    // name, body
+    Function(&'a str, Vec<Statement<'a>>),
+    // name
+    Package(&'a str),
+    // name, value
+    Assignment(&'a str, Expression<'a>)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
