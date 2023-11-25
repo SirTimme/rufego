@@ -2,7 +2,7 @@ use Token;
 
 peg::parser!(
     pub grammar language<'a>() for [Token<'a>] {
-        pub rule expr() -> Expression<'a> = precedence!{
+        pub rule expr() -> Expression = precedence!{
             e1:(@) [Token::Plus] e2:@ {
                 Expression::BinOp(Box::new(e1), BinOp::Add, Box::new(e2))
             }
@@ -39,23 +39,25 @@ pub enum Node {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Expression<'a> {
+pub enum Expression {
     Number(u64),
-    MethodCall,                                         // e.m(e...)
-    StructureLiteral,                                   // t{e...}
-    Select(Box<Expression<'a>>, Box<Expression<'a>>),               // e.f
-    TypeAssertion(Box<Expression<'a>>, Box<Expression<'a>>),        // e.(t)
-    BinOp(Box<Expression<'a>>, BinOp, Box<Expression<'a>>),
+    MethodCall,
+    StructureLiteral,
+    Select(Box<Expression>, Box<Expression>),
+    TypeAssertion(Box<Expression>, Box<Expression>),
+    BinOp(Box<Expression>, BinOp, Box<Expression>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Statement<'a> {
     // name, body
     Function(&'a str, Vec<Statement<'a>>),
+    // name, value
+    Assignment(&'a str, Expression),
     // name
     Package(&'a str),
-    // name, value
-    Assignment(&'a str, Expression<'a>)
+    // body
+    Program(Vec<Statement<'a>>)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

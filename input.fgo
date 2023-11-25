@@ -1,4 +1,4 @@
-func hello() {
+func b() {
      var bla = 5 * 10
      var y = 10 + 3
 }
