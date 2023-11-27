@@ -1,4 +1,7 @@
-func b() {
-     var bla = 5 * 10
-     var y = 10 + 3
+package main;
+
+func (x Hello) method() int {
+}
+
+func main() {
 }

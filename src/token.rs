@@ -60,5 +60,7 @@ pub enum Token<'a> {
     #[token("var")]
     Var,
     #[token("return")]
-    Return
+    Return,
+    #[token("main")]
+    Main
 }

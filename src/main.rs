@@ -15,7 +15,7 @@ fn main() {
         let tokens: Result<Vec<Token>, ()> = Token::lexer(&source).collect();
         let tokens = tokens.map_err(|_| format!("An error occurred while lexing the source")).unwrap();
 
-        let result: Result<parser::Statement<'_>, ParseError<usize>> = language::stmt(&tokens);
+        let result: Result<parser::Program, ParseError<usize>> = language::program(&tokens);
         let result = result.map_err(|_| format!("An error occurred while parsing the tokens")).unwrap();
 
         println!("{:?}", result);
