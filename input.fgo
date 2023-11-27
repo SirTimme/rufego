@@ -1,6 +1,7 @@
 package main;
 
-func (x Hello) method() int {
+func (x Hello) method(y Hello, x Bla, z urMom) int {
+    return (4 * 3) + 3
 }
 
 func main() {
