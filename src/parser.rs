@@ -19,7 +19,7 @@ peg::parser!(
             e1:(@) [Star] e2:@ { Expression::BinOp(Box::new(e1), BinOp::Mul, Box::new(e2)) }
             --
             [Number(number)] { Expression::Number(number) }
-            [LeftParenthesis] expr:expr() [RightParenthesis] { expr }
+            [LeftParenthesis] expr:expression() [RightParenthesis] { expr }
         }
     }
 );
