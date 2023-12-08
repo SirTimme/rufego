@@ -4,6 +4,17 @@ func (x Hello) method(y Hello, x Bla, z urMom) int {
     return (4 * 3) + 3
 }
 
+type hello struct {
+    x int
+    y int
+    z int
+}
+
+type bla interface {
+    me(y Bla, z you) int
+    i(fr da, gr dfe) String
+}
+
 func (x Ret) you(y Hello, x Bla, z urMom) int {
     return (4 * 3) + 3
 }

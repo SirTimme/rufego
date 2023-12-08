@@ -9,9 +9,17 @@ peg::parser!(
 
         rule declaration() -> Declaration<'a>
             = [Function] [LeftParenthesis] receiver:bound() [RightParenthesis] [Identifier(method_name)] [LeftParenthesis] params:bound()* [RightParenthesis] [Identifier(return_type)] [LeftCurlyBrace] [Return] body:expression()  [RightCurlyBrace] { Declaration::Method(receiver, method_name, params, return_type, body) }
+            / literal:type_literal() { Declaration::Type(literal) }
+
+        rule type_literal() -> TypeLiteral<'a>
+            = [Type] [Identifier(struct_name)] [Struct] [LeftCurlyBrace] fields:bound()* [RightCurlyBrace] { TypeLiteral::Structure(struct_name, fields) }
+            / [Type] [Identifier(interface_name)] [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] { TypeLiteral::Interface(interface_name, methods) }
 
         rule bound() -> Binding<'a>
             = [Identifier(variable)] [Identifier(type_)] [Comma]? { Binding { variable, type_ }}
+
+        rule method_body() -> MethodBody<'a>
+            = [Identifier(method_name)] [LeftParenthesis] params:bound()* [RightParenthesis] [Identifier(return_type)] { MethodBody { name: method_name, params, return_type } }
 
         rule expression() -> Expression<'a> = precedence!{
             e1:(@) [Plus] e2:@ { Expression::BinOp(Box::new(e1), BinOp::Add, Box::new(e2)) }
@@ -31,7 +39,7 @@ pub struct Program<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Declaration<'a> {
-    Type(&'a str),
+    Type(TypeLiteral<'a>),
     Method(Binding<'a>, &'a str, Vec<Binding<'a>>, &'a str, Expression<'a>)
 }
 
@@ -59,7 +67,14 @@ pub enum BinOp {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TypeLiteral {
-    Structure,
-    Interface
+pub enum TypeLiteral<'a> {
+    Structure(&'a str, Vec<Binding<'a>>),
+    Interface(&'a str, Vec<MethodBody<'a>>)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MethodBody<'a> {
+    name: &'a str,
+    params: Vec<Binding<'a>>,
+    return_type: &'a str
 }
