@@ -26,9 +26,17 @@ peg::parser!(
             --
             e1:(@) [Star] e2:@ { Expression::BinOp(Box::new(e1), BinOp::Mul, Box::new(e2)) }
             --
-            [Number(number)] { Expression::Number(number) }
             [LeftParenthesis] expr:expression() [RightParenthesis] { expr }
+            expr:expression_types() { expr }
         }
+
+        rule expression_types() -> Expression<'a>
+            = [Identifier(expr_var)] [Dot] [LeftParenthesis] [Identifier(assertion_type)] [RightParenthesis] { Expression::TypeAssertion(expr_var, assertion_type) }
+            / [Identifier(function_var)] [Dot] [Identifier(method_name)] [LeftParenthesis] [RightParenthesis] { Expression::MethodCall(function_var, method_name) }
+            / [Identifier(struct_var)] [Dot] [Identifier(field_name)] { Expression::Select(struct_var, field_name) }
+            / [Identifier(struct_name)] [LeftCurlyBrace] body:expression()* [RightCurlyBrace] { Expression::StructureLiteral(struct_name, body) }
+            / [Identifier(variable_name)] { Expression::Variable(variable_name) }
+            / [Number(number)]  { Expression::Number(number) }
     }
 );
 
@@ -52,10 +60,10 @@ pub struct Binding<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expression<'a> {
     Variable(&'a str),
-    MethodCall,
-    StructureLiteral,
-    Select,
-    TypeAssertion,
+    MethodCall(&'a str, &'a str),
+    StructureLiteral(&'a str, Vec<Expression<'a>>),
+    Select(&'a str, &'a str),
+    TypeAssertion(&'a str, &'a str),
     BinOp(Box<Expression<'a>>, BinOp, Box<Expression<'a>>),
     Number(u64)
 }
