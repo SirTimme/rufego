@@ -5,37 +5,71 @@ peg::parser!(
         use Token::*;
 
         pub rule program() -> Program<'a>
-            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [RightCurlyBrace] { Program { declarations } }
+            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [RightCurlyBrace] {
+                Program { declarations }
+            }
 
         rule declaration() -> Declaration<'a>
-            = [Function] [LeftParenthesis] receiver:binding() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding()* [RightParenthesis] [Identifier(return_type)] [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] { Declaration::Method { receiver, name, parameters, return_type, body }}
-            / literal:type_literal() { Declaration::Type { literal } }
+            = [Function] [LeftParenthesis] receiver:binding() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding()* [RightParenthesis] [Identifier(return_type)] [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
+                Declaration::Method { receiver, name, parameters, return_type, body }
+            }
+            / literal:type_literal() {
+                Declaration::Type { literal }
+            }
 
         rule type_literal() -> TypeLiteral<'a>
-            = [Type] [Identifier(name)] [Struct] [LeftCurlyBrace] fields:binding()* [RightCurlyBrace] { TypeLiteral::Struct { name, fields } }
-            / [Type] [Identifier(name)] [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] { TypeLiteral::Interface { name, methods } }
+            = [Type] [Identifier(name)] [Struct] [LeftCurlyBrace] fields:binding()* [RightCurlyBrace] {
+                TypeLiteral::Struct { name, fields }
+            }
+            / [Type] [Identifier(name)] [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] {
+                TypeLiteral::Interface { name, methods }
+            }
 
         rule binding() -> Binding<'a>
-            = [Identifier(variable)] [Identifier(type_)] [Comma]? { Binding { variable, type_ }}
+            = [Identifier(variable)] [Identifier(type_)] [Comma]? {
+                Binding { variable, type_ }
+            }
 
         rule method_body() -> MethodBody<'a>
-            = [Identifier(method_name)] [LeftParenthesis] params:binding()* [RightParenthesis] [Identifier(return_type)] { MethodBody { name: method_name, params, return_type } }
+            = [Identifier(name)] [LeftParenthesis] params:binding()* [RightParenthesis] [Identifier(return_type)] {
+                MethodBody { name, params, return_type }
+            }
 
         rule expression() -> Expression<'a>
-            = [Identifier(variable)] [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] { Expression::TypeAssertion { variable, assertion } }
-            / [Identifier(variable)] [Dot] [Identifier(method)] [LeftParenthesis] parameters:binding()* [RightParenthesis] { Expression::MethodCall { variable, method, parameters } }
-            / [Identifier(name)] [Dot] [Identifier(field)] { Expression::Select { name, field } }
-            / [Identifier(name)] [LeftCurlyBrace] fields:(expr:expression() [Comma]? { expr })* [RightCurlyBrace] { Expression::StructLiteral { name, fields } }
-            / [Identifier(name)] { Expression::Variable { name } }
-            / expr:arithmetic() { expr }
+            = [Identifier(variable)] [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
+                Expression::TypeAssertion { variable, assertion }
+            }
+            / [Identifier(variable)] [Dot] [Identifier(method)] [LeftParenthesis] parameters:binding()* [RightParenthesis] {
+                Expression::MethodCall { variable, method, parameters }
+            }
+            / [Identifier(name)] [Dot] [Identifier(field)] {
+                Expression::Select { name, field }
+            }
+            / [Identifier(name)] [LeftCurlyBrace] fields:(expr:expression() [Comma]? { expr })* [RightCurlyBrace] {
+                Expression::StructLiteral { name, fields }
+            }
+            / [Identifier(name)] {
+                Expression::Variable { name }
+            }
+            / expression:arithmetic() {
+                expression
+            }
 
         rule arithmetic() -> Expression<'a> = precedence!{
-            lhs:(@) [Plus] rhs:@ { Expression::BinOp { lhs: Box::new(lhs), operator: BinOp::Add, rhs: Box::new(rhs) } }
+            lhs:(@) [Plus] rhs:@ {
+                Expression::BinOp { lhs: Box::new(lhs), operator: BinOp::Add, rhs: Box::new(rhs) }
+            }
             --
-            lhs:(@) [Star] rhs:@ { Expression::BinOp { lhs: Box::new(lhs), operator: BinOp::Mul, rhs: Box::new(rhs) } }
+            lhs:(@) [Star] rhs:@ { Expression::BinOp {
+                lhs: Box::new(lhs), operator: BinOp::Mul, rhs: Box::new(rhs) }
+            }
             --
-            [Number(value)]  { Expression::Number { value } }
-            [LeftParenthesis] expr:expression() [RightParenthesis] { expr }
+            [Number(value)] {
+                Expression::Number { value }
+            }
+            [LeftParenthesis] expression:expression() [RightParenthesis] {
+                expression
+            }
         }
     }
 );
