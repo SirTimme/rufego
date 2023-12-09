@@ -57,11 +57,11 @@ peg::parser!(
 
         rule arithmetic() -> Expression<'a> = precedence!{
             lhs:(@) [Plus] rhs:@ {
-                Expression::BinOp { lhs: Box::new(lhs), operator: BinOp::Add, rhs: Box::new(rhs) }
+                Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) }
             }
             --
             lhs:(@) [Star] rhs:@ { Expression::BinOp {
-                lhs: Box::new(lhs), operator: BinOp::Mul, rhs: Box::new(rhs) }
+                lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
             }
             --
             [Number(value)] {
@@ -142,7 +142,7 @@ pub enum Expression<'a> {
     },
     BinOp {
         lhs: Box<Expression<'a>>,
-        operator: BinOp,
+        operator: Operator,
         rhs: Box<Expression<'a>>
     }
     // Variable(&'a str),
@@ -162,7 +162,7 @@ pub struct MethodBody<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BinOp {
+pub enum Operator {
     Add,
     Mul,
 }
