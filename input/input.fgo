@@ -1,6 +1,6 @@
 package main;
 
-func (x Hello) method(y Hello, x Bla, z urMom) int {
+func (x Hello) method(y Hello, x Bla, z cya) int {
     return hello.(bool)
 }
 
@@ -9,15 +9,21 @@ type hello struct {
     y int
     z int
 }
+("hello", (x int, y int, z int))
 
 type bla interface {
     me(y Bla, z you) int
     i(fr da, gr dfe) String
 }
 
-func (x Ret) you(y Hello, x Bla, z urMom) int {
-    return (4 * 3) + 3
+func (x Ret) you(y hello, x float, z double) int {
+    return y.x
+}
+
+func (x Ret) you(y int, x bla, z double, ) int {
+    return 2.y + x.(Bool) * 6
 }
 
 func main() {
+    _ = 5 * 3
 }

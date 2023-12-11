@@ -25,6 +25,8 @@ pub enum Token<'a> {
     Dot,
     #[token(";")]
     Semicolon,
+    #[token("_")]
+    Underscore,
     #[token("!")]
     ExclamationMark,
     #[token("!=")]

@@ -5,8 +5,8 @@ peg::parser!(
         use Token::*;
 
         pub rule program() -> Program<'a>
-            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [RightCurlyBrace] {
-                Program { declarations }
+            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] expression:expression() [RightCurlyBrace] {
+                Program { declarations, expression: Box::new(expression) }
             }
 
         rule declaration() -> Declaration<'a>
@@ -35,27 +35,8 @@ peg::parser!(
                 MethodBody { name, params, return_type }
             }
 
-        rule expression() -> Expression<'a>
-            = [Identifier(variable)] [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
-                Expression::TypeAssertion { variable, assertion }
-            }
-            / [Identifier(variable)] [Dot] [Identifier(method)] [LeftParenthesis] parameters:binding()* [RightParenthesis] {
-                Expression::MethodCall { variable, method, parameters }
-            }
-            / [Identifier(name)] [Dot] [Identifier(field)] {
-                Expression::Select { name, field }
-            }
-            / [Identifier(name)] [LeftCurlyBrace] fields:(expr:expression() [Comma]? { expr })* [RightCurlyBrace] {
-                Expression::StructLiteral { name, fields }
-            }
-            / [Identifier(name)] {
-                Expression::Variable { name }
-            }
-            / expression:arithmetic() {
-                expression
-            }
-
-        rule arithmetic() -> Expression<'a> = precedence!{
+        #[cache]
+        rule expression() -> Expression<'a> = precedence!{
             lhs:(@) [Plus] rhs:@ {
                 Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) }
             }
@@ -64,6 +45,22 @@ peg::parser!(
                 lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
             }
             --
+            expression:(@) [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
+                Expression::TypeAssertion { expression: Box::new(expression), assertion }
+            }
+            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameters:binding()* [RightParenthesis] {
+                Expression::MethodCall { expression: Box::new(expression), method, parameters }
+            }
+            expression:(@) [Dot] [Identifier(field)] {
+                Expression::Select { expression: Box::new(expression), field }
+            }
+            --
+            [Identifier(name)] [LeftCurlyBrace] fields:(expression() ** [Comma]) [RightCurlyBrace] {
+                Expression::StructLiteral { name, fields }
+            }
+            [Identifier(name)] {
+                Expression::Variable { name }
+            }
             [Number(value)] {
                 Expression::Number { value }
             }
@@ -77,6 +74,7 @@ peg::parser!(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Program<'a> {
     declarations: Vec<Declaration<'a>>,
+    expression: Box<Expression<'a>>
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -91,8 +89,6 @@ pub enum Declaration<'a> {
         return_type: &'a str,
         body: Expression<'a>
     }
-    // Type(TypeLiteral<'a>),
-    // Method(Binding<'a>, &'a str, Vec<Binding<'a>>, &'a str, Expression<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,8 +101,6 @@ pub enum TypeLiteral<'a> {
         name: &'a str,
         methods: Vec<MethodBody<'a>>
     }
-    // Structure(&'a str, Vec<Binding<'a>>),
-    // Interface(&'a str, Vec<MethodBody<'a>>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,7 +115,7 @@ pub enum Expression<'a> {
         name: &'a str
     },
     MethodCall {
-        variable: &'a str,
+        expression: Box<Expression<'a>>,
         method: &'a str,
         parameters: Vec<Binding<'a>>
     },
@@ -130,11 +124,11 @@ pub enum Expression<'a> {
         fields: Vec<Expression<'a>>
     },
     Select {
-        name: &'a str,
+        expression: Box<Expression<'a>>,
         field: &'a str
     },
     TypeAssertion {
-        variable: &'a str,
+        expression: Box<Expression<'a>>,
         assertion: &'a str
     },
     Number {
@@ -145,13 +139,6 @@ pub enum Expression<'a> {
         operator: Operator,
         rhs: Box<Expression<'a>>
     }
-    // Variable(&'a str),
-    // MethodCall(&'a str, &'a str),
-    // StructureLiteral(&'a str, Vec<Expression<'a>>),
-    // Select(&'a str, &'a str),
-    // TypeAssertion(&'a str, &'a str),
-    // BinOp(Box<Expression<'a>>, BinOp, Box<Expression<'a>>),
-    // Number(u64),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
