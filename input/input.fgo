@@ -1,27 +1,17 @@
 package main;
 
-func (x Hello) method(y Hello, x Bla, z cya) int {
-    return hello.(bool)
+func (x hello) method(y int) int {
+    return y.(bool)
 }
 
-type hello struct {
+type int struct {
     x int
     y int
-    z int
-}
-("hello", (x int, y int, z int))
-
-type bla interface {
-    me(y Bla, z you) int
-    i(fr da, gr dfe) String
 }
 
-func (x Ret) you(y hello, x float, z double) int {
-    return y.x
-}
-
-func (x Ret) you(y int, x bla, z double, ) int {
-    return 2.y + x.(Bool) * 6
+type hello interface {
+    method(y int) int
+    method(x int) int
 }
 
 func main() {
