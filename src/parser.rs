@@ -1,10 +1,10 @@
 use Token;
 
 peg::parser!(
-    pub grammar language<'a>() for [Token<'a>] {
+    pub(crate) grammar language<'a>() for [Token<'a>] {
         use Token::*;
 
-        pub rule program() -> Program<'a>
+        pub(crate) rule program() -> Program<'a>
             = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] expression:expression() [RightCurlyBrace] {
                 Program { declarations, expression: Box::new(expression) }
             }
@@ -72,13 +72,13 @@ peg::parser!(
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Program<'a> {
-    declarations: Vec<Declaration<'a>>,
+pub(crate) struct Program<'a> {
+    pub(crate) declarations: Vec<Declaration<'a>>,
     expression: Box<Expression<'a>>
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Declaration<'a> {
+pub(crate) enum Declaration<'a> {
     Type {
         literal: TypeLiteral<'a>
     },
@@ -92,7 +92,7 @@ pub enum Declaration<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TypeLiteral<'a> {
+pub(crate) enum TypeLiteral<'a> {
     Struct {
         name: &'a str,
         fields: Vec<Binding<'a>>
@@ -104,13 +104,13 @@ pub enum TypeLiteral<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Binding<'a> {
-    variable: &'a str,
-    type_: &'a str,
+pub(crate) struct Binding<'a> {
+    pub(crate) variable: &'a str,
+    pub(crate) type_: &'a str,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Expression<'a> {
+pub(crate) enum Expression<'a> {
     Variable {
         name: &'a str
     },
@@ -142,10 +142,10 @@ pub enum Expression<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MethodBody<'a> {
-    name: &'a str,
-    params: Vec<Binding<'a>>,
-    return_type: &'a str,
+pub(crate) struct MethodBody<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) params: Vec<Binding<'a>>,
+    pub(crate) return_type: &'a str,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
