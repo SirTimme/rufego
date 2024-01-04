@@ -1,7 +1,7 @@
 package main;
 
 func (x hello) method(y int) int {
-    return y.(bool)
+    return y.method(hello{ 1, 2 })
 }
 
 type int struct {

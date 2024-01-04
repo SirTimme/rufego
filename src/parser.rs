@@ -48,7 +48,7 @@ peg::parser!(
             expression:(@) [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
                 Expression::TypeAssertion { expression: Box::new(expression), assertion }
             }
-            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameters:binding()* [RightParenthesis] {
+            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameters:(expression() ** [Comma]) [RightParenthesis] {
                 Expression::MethodCall { expression: Box::new(expression), method, parameters }
             }
             expression:(@) [Dot] [Identifier(field)] {
@@ -117,7 +117,7 @@ pub(crate) enum Expression<'a> {
     MethodCall {
         expression: Box<Expression<'a>>,
         method: &'a str,
-        parameters: Vec<Binding<'a>>
+        parameters: Vec<Expression<'a>>
     },
     StructLiteral {
         name: &'a str,
