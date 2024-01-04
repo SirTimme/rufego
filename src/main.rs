@@ -5,7 +5,7 @@ mod token;
 mod parser;
 mod type_checker;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
 use peg::error::ParseError;
@@ -21,7 +21,7 @@ fn main() {
         let result: Result<Program, ParseError<usize>> = language::program(&tokens);
         let result = result.map_err(|_| println!("An error occurred while parsing the tokens")).unwrap();
 
-        let mut type_checker = TypeChecker { program: &result, types: HashSet::new(), structs: HashMap::new(), interfaces: HashMap::new() };
+        let mut type_checker = TypeChecker { program: &result, types: HashMap::new() };
         type_checker.check_program();
     }
 }

@@ -6,12 +6,12 @@ func (x hello) method(y int) int {
 
 type int struct {
     x int
-    y int
+    y hello
 }
 
 type hello interface {
+    method(y int, x hello) int
     method(y int) int
-    method(x int) int
 }
 
 func main() {
