@@ -27,7 +27,7 @@ impl TypeChecker<'_> {
                 match literal {
                     TypeLiteral::Struct { name, .. } => {
                         if self.types.contains_key(name) {
-                            eprintln!("ERROR: Found duplicate declaration for struct type {:?}", name);
+                            eprintln!("ERROR: Type {:?} already declared", name);
                             exit(1);
                         } else {
                             self.types.insert(name, declaration);
@@ -35,7 +35,7 @@ impl TypeChecker<'_> {
                     }
                     TypeLiteral::Interface { name, .. } => {
                         if self.types.contains_key(name) {
-                            eprintln!("ERROR: Found duplicate declaration for interface type {:?}", name);
+                            eprintln!("ERROR: Type {:?} already declared", name);
                             exit(1);
                         } else {
                             self.types.insert(name, declaration);
