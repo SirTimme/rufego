@@ -27,7 +27,7 @@ impl TypeChecker<'_> {
                 match literal {
                     TypeLiteral::Struct { name, .. } => {
                         if self.types.contains_key(name) {
-                            eprintln!("ERROR Duplicate struct type {name}");
+                            eprintln!("ERROR: Found duplicate declaration for struct type {:?}", name);
                             exit(1);
                         } else {
                             self.types.insert(name, declaration);
@@ -35,7 +35,7 @@ impl TypeChecker<'_> {
                     }
                     TypeLiteral::Interface { name, .. } => {
                         if self.types.contains_key(name) {
-                            eprintln!("ERROR Duplicate interface type {name}");
+                            eprintln!("ERROR: Found duplicate declaration for interface type {:?}", name);
                             exit(1);
                         } else {
                             self.types.insert(name, declaration);
@@ -49,10 +49,10 @@ impl TypeChecker<'_> {
     /*
         Judgement t ok => type t is declared
     */
-    fn check_type(&self, type_name: &str) {
+    fn check_type(&self, name: &str) {
         // is the type declared?
-        if !self.types.contains_key(type_name) {
-            eprintln!("ERROR Use of undeclared type: {type_name}");
+        if !self.types.contains_key(name) {
+            eprintln!("ERROR: Use of undeclared type {:?}", name);
             exit(1);
         }
     }
@@ -62,20 +62,20 @@ impl TypeChecker<'_> {
             - all formal parameters x are distinct
             - all the types t are declared
      */
-    fn check_method_specification(&self, method_body: &MethodBody) {
+    fn check_method_specification(&self, method_spec: &MethodBody) {
         // parameters distinct?
-        for (i, item) in method_body.params.iter().enumerate() {
+        for (i, parameter) in method_spec.params.iter().enumerate() {
             // parameter type declared?
-            self.check_type(item.type_);
+            self.check_type(parameter.type_);
 
-            if method_body.params.iter().skip(i + 1).any(|x| x.variable == item.variable) {
-                eprintln!("ERROR Duplicate method parameter {:?}", item.variable);
+            if method_spec.params.iter().skip(i + 1).any(|element| element.variable == parameter.variable) {
+                eprintln!("ERROR: Found duplicate method parameter {:?} for method {:?}", parameter.variable, method_spec.name);
                 exit(1);
             }
         }
 
         // return types declared?
-        self.check_type(method_body.return_type);
+        self.check_type(method_spec.return_type);
     }
 
     /*
@@ -85,29 +85,30 @@ impl TypeChecker<'_> {
                 - all types declared
             Interface:
                 - all its method specifications are well formed
+                - all method names are unique
      */
     fn check_type_literal(&self, type_literal: &TypeLiteral) {
         match type_literal {
-            TypeLiteral::Struct { fields, .. } => {
+            TypeLiteral::Struct { name, fields} => {
                 // field names distinct?
                 for (i, field) in fields.iter().enumerate() {
                     // field type declared?
                     self.check_type(field.type_);
 
-                    if fields.iter().skip(i + 1).any(|x| x.variable == field.variable) {
-                        eprintln!("ERROR Duplicate struct field {:?}", field.variable);
+                    if fields.iter().skip(i + 1).any(|element| element.variable == field.variable) {
+                        eprintln!("ERROR: Found duplicate struct field {:?} for struct {:?}", field.variable, name);
                         exit(1);
                     }
                 }
             }
-            TypeLiteral::Interface { methods, .. } => {
-                // method specifications distinct?
-                for (i, method_spec) in methods.iter().enumerate() {
+            TypeLiteral::Interface { name, methods: method_specs } => {
+                // method name unique?
+                for (i, method_spec) in method_specs.iter().enumerate() {
                     // method specification well formed?
                     self.check_method_specification(method_spec);
 
-                    if methods.iter().skip(i + 1).any(|x| x == method_spec) {
-                        eprintln!("ERROR Duplicate method specification {:?}", method_spec);
+                    if method_specs.iter().skip(i + 1).any(|element| element.name == method_spec.name) {
+                        eprintln!("ERROR: Found duplicate interface method {:?} for interface {:?}", method_spec.name, name);
                         exit(1);
                     }
                 }
@@ -137,12 +138,12 @@ impl TypeChecker<'_> {
                 self.check_type(receiver.type_);
 
                 // parameters distinct?
-                for (i, item) in parameters.iter().enumerate() {
+                for (i, parameter) in parameters.iter().enumerate() {
                     // parameter type declared?
-                    self.check_type(item.type_);
+                    self.check_type(parameter.type_);
 
-                    if receiver.variable == item.variable || parameters.iter().skip(i + 1).any(|x| x.variable == item.variable) {
-                        eprintln!("ERROR Duplicate method parameter {:?}", item.variable);
+                    if receiver.variable == parameter.variable || parameters.iter().skip(i + 1).any(|element| element.variable == parameter.variable) {
+                        eprintln!("ERROR: Found duplicate method parameter {:?}", parameter.variable);
                         exit(1);
                     }
                 }
