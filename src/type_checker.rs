@@ -201,7 +201,7 @@ impl TypeChecker<'_> {
                                 // TODO does the expression type implements the field type (not only be the same)
                                 continue
                             } else {
-                                eprintln!("ERROR: Field {:?} has type {:?}, got type {:?} instead", field.name, field.type_, expression_type);
+                                eprintln!("ERROR: Field {:?} of type {:?} has type {:?}, got type {:?} instead", field.name, name, field.type_, expression_type);
                                 exit(1);
                             }
                         } else {
