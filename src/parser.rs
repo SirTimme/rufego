@@ -30,18 +30,26 @@ peg::parser!(
                 Binding { name, type_ }
             }
 
-        rule method_body() -> MethodBody<'a>
-            = [Identifier(name)] [LeftParenthesis] params:binding()* [RightParenthesis] [Identifier(return_type)] {
-                MethodBody { name, params, return_type }
+        rule method_body() -> MethodSpecification<'a>
+            = [Identifier(name)] [LeftParenthesis] parameters:binding()* [RightParenthesis] [Identifier(return_type)] {
+                MethodSpecification { name, parameters, return_type }
             }
 
         #[cache]
         rule expression() -> Expression<'a> = precedence!{
-            expression:(@) [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
-                Expression::TypeAssertion { expression: Box::new(expression), assertion }
+            lhs:(@) [Plus] rhs:@ {
+                Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) }
             }
-            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameters:(expression() ** [Comma]) [RightParenthesis] {
-                Expression::MethodCall { expression: Box::new(expression), method, parameters }
+            --
+            lhs:(@) [Star] rhs:@ { Expression::BinOp {
+                lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
+            }
+            --
+            expression:(@) [Dot] [LeftParenthesis] [Identifier(assert)] [RightParenthesis] {
+                Expression::TypeAssertion { expression: Box::new(expression), assert }
+            }
+            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
+                Expression::MethodCall { expression: Box::new(expression), method, parameter_expressions }
             }
             expression:(@) [Dot] [Identifier(field)] {
                 Expression::Select { expression: Box::new(expression), field }
@@ -53,6 +61,9 @@ peg::parser!(
             [Identifier(name)] {
                 Expression::Variable { name }
             }
+            [Number(value)] {
+                Expression::Number { value }
+            }
             [LeftParenthesis] expression:expression() [RightParenthesis] {
                 expression
             }
@@ -63,7 +74,7 @@ peg::parser!(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Program<'a> {
     pub(crate) declarations: Vec<Declaration<'a>>,
-    expression: Box<Expression<'a>>
+    pub(crate) expression: Box<Expression<'a>>
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,7 +99,7 @@ pub(crate) enum TypeLiteral<'a> {
     },
     Interface {
         name: &'a str,
-        methods: Vec<MethodBody<'a>>
+        methods: Vec<MethodSpecification<'a>>
     }
 }
 
@@ -106,7 +117,7 @@ pub(crate) enum Expression<'a> {
     MethodCall {
         expression: Box<Expression<'a>>,
         method: &'a str,
-        parameters: Vec<Expression<'a>>
+        parameter_expressions: Vec<Expression<'a>>
     },
     StructLiteral {
         name: &'a str,
@@ -118,13 +129,27 @@ pub(crate) enum Expression<'a> {
     },
     TypeAssertion {
         expression: Box<Expression<'a>>,
-        assertion: &'a str
+        assert: &'a str
+    },
+    Number {
+        value: u64
+    },
+    BinOp {
+        lhs: Box<Expression<'a>>,
+        operator: Operator,
+        rhs: Box<Expression<'a>>
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MethodBody<'a> {
+pub(crate) struct MethodSpecification<'a> {
     pub(crate) name: &'a str,
-    pub(crate) params: Vec<Binding<'a>>,
+    pub(crate) parameters: Vec<Binding<'a>>,
     pub(crate) return_type: &'a str,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operator {
+    Add,
+    Mul,
 }
