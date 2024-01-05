@@ -53,9 +53,6 @@ peg::parser!(
             [Identifier(name)] {
                 Expression::Variable { name }
             }
-            [Number(value)] {
-                Expression::Number { value }
-            }
             [LeftParenthesis] expression:expression() [RightParenthesis] {
                 expression
             }
