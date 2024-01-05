@@ -1,19 +1,16 @@
 package main;
 
-func (x hello) method(a int, b int) int {
-    return int { a, x }
+func (x empty) build() int {
+    return 5 * 3
 }
+
+type empty struct {}
 
 type int struct {
-    x int
-    y int
-}
-
-type hello interface {
-    method(y int) int
-    method2(y int) int
+    a empty
+    b empty
 }
 
 func main() {
-    _ = x
+    _ = 1 + 2
 }
