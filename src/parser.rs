@@ -37,14 +37,6 @@ peg::parser!(
 
         #[cache]
         rule expression() -> Expression<'a> = precedence!{
-            lhs:(@) [Plus] rhs:@ {
-                Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) }
-            }
-            --
-            lhs:(@) [Star] rhs:@ { Expression::BinOp {
-                lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
-            }
-            --
             expression:(@) [Dot] [LeftParenthesis] [Identifier(assertion)] [RightParenthesis] {
                 Expression::TypeAssertion { expression: Box::new(expression), assertion }
             }
@@ -130,14 +122,6 @@ pub(crate) enum Expression<'a> {
     TypeAssertion {
         expression: Box<Expression<'a>>,
         assertion: &'a str
-    },
-    Number {
-        value: u64
-    },
-    BinOp {
-        lhs: Box<Expression<'a>>,
-        operator: Operator,
-        rhs: Box<Expression<'a>>
     }
 }
 
@@ -146,10 +130,4 @@ pub(crate) struct MethodBody<'a> {
     pub(crate) name: &'a str,
     pub(crate) params: Vec<Binding<'a>>,
     pub(crate) return_type: &'a str,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Operator {
-    Add,
-    Mul,
 }
