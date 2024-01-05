@@ -26,8 +26,8 @@ peg::parser!(
             }
 
         rule binding() -> Binding<'a>
-            = [Identifier(variable)] [Identifier(type_)] [Comma]? {
-                Binding { variable, type_ }
+            = [Identifier(name)] [Identifier(type_)] [Comma]? {
+                Binding { name, type_ }
             }
 
         rule method_body() -> MethodBody<'a>
@@ -47,8 +47,8 @@ peg::parser!(
                 Expression::Select { expression: Box::new(expression), field }
             }
             --
-            [Identifier(name)] [LeftCurlyBrace] fields:(expression() ** [Comma]) [RightCurlyBrace] {
-                Expression::StructLiteral { name, fields }
+            [Identifier(name)] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
+                Expression::StructLiteral { name, field_expressions }
             }
             [Identifier(name)] {
                 Expression::Variable { name }
@@ -97,7 +97,7 @@ pub(crate) enum TypeLiteral<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Binding<'a> {
-    pub(crate) variable: &'a str,
+    pub(crate) name: &'a str,
     pub(crate) type_: &'a str,
 }
 
@@ -113,7 +113,7 @@ pub(crate) enum Expression<'a> {
     },
     StructLiteral {
         name: &'a str,
-        fields: Vec<Expression<'a>>
+        field_expressions: Vec<Expression<'a>>
     },
     Select {
         expression: Box<Expression<'a>>,

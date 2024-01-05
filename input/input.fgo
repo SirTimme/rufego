@@ -1,12 +1,12 @@
 package main;
 
-func (x hello) method(y int) int {
-    return y.method(hello{ 1, 2 })
+func (x hello) method(a int, b int) int {
+    return int { a, x }
 }
 
 type int struct {
     x int
-    y hello
+    y int
 }
 
 type hello interface {
@@ -15,5 +15,5 @@ type hello interface {
 }
 
 func main() {
-    _ = 5 * 3
+    _ = x
 }
