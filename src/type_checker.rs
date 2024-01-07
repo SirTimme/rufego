@@ -143,7 +143,7 @@ impl TypeChecker<'_> {
                     self.check_type(parameter.type_);
 
                     if receiver.name == parameter.name || parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-                        eprintln!("ERROR: Found duplicate method parameter {:?}", parameter.name);
+                        eprintln!("ERROR: Found duplicate method parameter {:?} in method {:?}", parameter.name, name);
                         exit(1);
                     }
                 }
@@ -162,9 +162,12 @@ impl TypeChecker<'_> {
                 // determine type of body
                 let expression_type = self.check_expression(body, &context);
 
-                println!("Expression type of method {:?} is {:?}", name, expression_type)
+                if &expression_type != return_type {
+                    eprintln!("ERROR: Method {:?} has return type {:?}, body evaluates to type {:?} instead", name, return_type, expression_type);
+                    exit(1);
+                }
 
-                // TODO does expression type implement return type?
+                // TODO check also for subtype
             }
         }
     }
@@ -233,10 +236,8 @@ impl TypeChecker<'_> {
                             let expression_type = self.check_expression(expression, context);
 
                             if let Some(field) = fields.get(index) {
-                                if expression_type == field.type_ {
-                                    // TODO does the expression type implements the field type (not only be the same)
-                                    continue;
-                                } else {
+                                // TODO check also for subtype
+                                if expression_type != field.type_ {
                                     eprintln!("ERROR: Field {:?} of type {:?} has type {:?}, got type {:?} instead", field.name, name, field.type_, expression_type);
                                     exit(1);
                                 }
