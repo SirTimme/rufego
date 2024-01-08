@@ -52,7 +52,7 @@ impl TypeChecker<'_> {
         Judgement t ok => type t is declared
     */
     fn check_type(&self, name: &str) {
-        // is the type declared?
+        // type declared?
         if !self.types.contains_key(name) {
             eprintln!("ERROR: Use of undeclared type {:?}", name);
             exit(1);
@@ -65,11 +65,11 @@ impl TypeChecker<'_> {
             - all the types t are declared
      */
     fn check_method_specification(&self, method_specification: &MethodSpecification) {
-        // parameters distinct?
         for (index, parameter) in method_specification.parameters.iter().enumerate() {
             // parameter type declared?
             self.check_type(parameter.type_);
 
+            // method parameters distinct?
             if method_specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
                 eprintln!("ERROR: Found duplicate method parameter {:?} for method {:?}", parameter.name, method_specification.name);
                 exit(1);
@@ -92,11 +92,11 @@ impl TypeChecker<'_> {
     fn check_type_literal(&self, type_literal: &TypeLiteral) {
         match type_literal {
             TypeLiteral::Struct { name, fields } => {
-                // field names distinct?
                 for (index, field) in fields.iter().enumerate() {
                     // field type declared?
                     self.check_type(field.type_);
 
+                    // field names distinct?
                     if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
                         eprintln!("ERROR: Found duplicate struct field {:?} for struct {:?}", field.name, name);
                         exit(1);
@@ -104,11 +104,11 @@ impl TypeChecker<'_> {
                 }
             }
             TypeLiteral::Interface { name, methods: method_specifications } => {
-                // method name unique?
                 for (index, method_specification) in method_specifications.iter().enumerate() {
                     // method specification well formed?
                     self.check_method_specification(method_specification);
 
+                    // method name unique?
                     if method_specifications.iter().skip(index + 1).any(|element| element.name == method_specification.name) {
                         eprintln!("ERROR: Found duplicate interface method {:?} for interface {:?}", method_specification.name, name);
                         exit(1);
@@ -137,11 +137,11 @@ impl TypeChecker<'_> {
                 // receiver type declared?
                 self.check_type(receiver.type_);
 
-                // parameters distinct?
                 for (index, parameter) in parameters.iter().enumerate() {
                     // parameter type declared?
                     self.check_type(parameter.type_);
 
+                    // parameter names distinct?
                     if receiver.name == parameter.name || parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
                         eprintln!("ERROR: Found duplicate method parameter {:?} in method {:?}", parameter.name, name);
                         exit(1);
@@ -162,6 +162,7 @@ impl TypeChecker<'_> {
                 // determine type of body
                 let expression_type = self.check_expression(body, &context);
 
+                // body type implement return type?
                 if &expression_type != return_type {
                     eprintln!("ERROR: Method {:?} has return type {:?}, body evaluates to type {:?} instead", name, return_type, expression_type);
                     exit(1);
@@ -192,25 +193,25 @@ impl TypeChecker<'_> {
                         exit(1);
                     }
 
+                    // correct amount of parameters supplied?
                     if parameter_expressions.len() != parameters.len() {
                         eprintln!("ERROR: Call of method {:?} does not match method signature", name);
                         exit(1);
                     }
 
                     for (index, expression) in parameter_expressions.iter().enumerate() {
-                        let expression_type = self.check_expression(expression, context);
-
                         if let Some(parameter) = parameters.get(index) {
-                            if expression_type == parameter.type_ {
-                                continue;
-                            } else {
+                            // evaluate type of supplied parameter
+                            let expression_type = self.check_expression(expression, context);
+
+                            if expression_type != parameter.type_ {
                                 eprintln!("ERROR: Method parameter {:?} has type {:?}, got type {:?} instead", parameter.name, parameter.type_, expression_type);
                                 exit(1);
                             }
                         }
                     }
 
-                    // is the return type declared?
+                    // return type declared?
                     self.check_type(return_type);
 
                     return_type
@@ -225,20 +226,20 @@ impl TypeChecker<'_> {
 
                 if let Some(Declaration::Type { literal }) = self.types.get(name) {
                     if let TypeLiteral::Struct { name, fields } = literal {
-                        // expressions the same length as struct fields?
+                        // correct amount of parameters supplied?
                         if field_expressions.len() != fields.len() {
                             eprintln!("ERROR: Field expressions does not match shape of struct {:?}", name);
                             exit(1);
                         }
 
-                        // evaluate body expressions of struct
                         for (index, expression) in field_expressions.iter().enumerate() {
-                            let expression_type = self.check_expression(expression, context);
-
                             if let Some(field) = fields.get(index) {
+                                // evaluate type of supplied parameter
+                                let field_type = self.check_expression(expression, context);
+
                                 // TODO check also for subtype
-                                if expression_type != field.type_ {
-                                    eprintln!("ERROR: Field {:?} of type {:?} has type {:?}, got type {:?} instead", field.name, name, field.type_, expression_type);
+                                if field_type != field.type_ {
+                                    eprintln!("ERROR: Field {:?} of type {:?} has type {:?}, got type {:?} instead", field.name, name, field.type_, field_type);
                                     exit(1);
                                 }
                             } else {
@@ -258,13 +259,13 @@ impl TypeChecker<'_> {
                 }
             }
             Expression::Select { expression, field: field_var } => {
-                let type_ = self.check_expression(expression, context);
+                let struct_type = self.check_expression(expression, context);
 
-                if let Some(declaration) = self.types.get(type_) {
+                if let Some(declaration) = self.types.get(struct_type) {
                     if let Declaration::Type { literal } = declaration {
                         if let TypeLiteral::Struct { name, fields } = literal {
-                            if let Some(field_type) = fields.iter().find(|field| &field.name == field_var) {
-                                field_type.type_
+                            if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
+                                field.type_
                             } else {
                                 eprintln!("ERROR: Struct type {:?} doesnt have a field named {:?}", name, field_var);
                                 exit(1);
@@ -278,7 +279,7 @@ impl TypeChecker<'_> {
                         exit(1);
                     }
                 } else {
-                    eprintln!("ERROR: Use of unknown type {:?}", type_);
+                    eprintln!("ERROR: Use of unknown type {:?}", struct_type);
                     exit(1);
                 }
             }
