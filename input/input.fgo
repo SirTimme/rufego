@@ -1,16 +1,16 @@
 package main;
 
-func (x empty) build() int {
-    return 5 * 3
+func (x hello) build() hello {
+    return x.(hello)
 }
 
 type empty struct {}
 
-type int struct {
+type hello struct {
     a empty
     b empty
 }
 
 func main() {
-    _ = 1 + 2
+    _ = (hello{empty{},empty{}}).build()
 }

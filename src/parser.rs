@@ -1,4 +1,5 @@
 use Token;
+use type_checker::Type as TypeEnum;
 
 peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {
@@ -10,30 +11,39 @@ peg::parser!(
             }
 
         rule declaration() -> Declaration<'a>
-            = [Function] [LeftParenthesis] receiver:binding() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding()* [RightParenthesis] [Identifier(return_type)] [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
-                Declaration::Method { receiver, name, parameters, return_type, body }
+            = [Function] [LeftParenthesis] receiver:binding_string() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
+                Declaration::Method(MethodDeclaration{ receiver, specification: MethodSpecification{ name, parameters, return_type }, body })
             }
             / literal:type_literal() {
                 Declaration::Type { literal }
             }
 
         rule type_literal() -> TypeLiteral<'a>
-            = [Type] [Identifier(name)] [Struct] [LeftCurlyBrace] fields:binding()* [RightCurlyBrace] {
+            = [Type] [Identifier(name)] [Struct] [LeftCurlyBrace] fields:binding_type()* [RightCurlyBrace] {
                 TypeLiteral::Struct { name, fields }
             }
             / [Type] [Identifier(name)] [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] {
                 TypeLiteral::Interface { name, methods }
             }
 
-        rule binding() -> Binding<'a>
+        rule binding_string() -> Binding<'a, &'a str>
             = [Identifier(name)] [Identifier(type_)] [Comma]? {
                 Binding { name, type_ }
             }
 
+        rule binding_type() -> Binding<'a, TypeEnum<'a>>
+            = [Identifier(name)] type_:type_() [Comma]? {
+                Binding { name, type_ }
+            }
+
         rule method_body() -> MethodSpecification<'a>
-            = [Identifier(name)] [LeftParenthesis] parameters:binding()* [RightParenthesis] [Identifier(return_type)] {
+            = [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() {
                 MethodSpecification { name, parameters, return_type }
             }
+
+        rule type_() -> TypeEnum<'a>
+            = [Int] { TypeEnum::Int }
+            / [Identifier(name)] {TypeEnum::Struct(name) }
 
         #[cache]
         rule expression() -> Expression<'a> = precedence!{
@@ -45,7 +55,7 @@ peg::parser!(
                 lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
             }
             --
-            expression:(@) [Dot] [LeftParenthesis] [Identifier(assert)] [RightParenthesis] {
+            expression:(@) [Dot] [LeftParenthesis] assert:type_() [RightParenthesis] {
                 Expression::TypeAssertion { expression: Box::new(expression), assert }
             }
             expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
@@ -82,20 +92,21 @@ pub(crate) enum Declaration<'a> {
     Type {
         literal: TypeLiteral<'a>
     },
-    Method {
-        receiver: Binding<'a>,
-        name: &'a str,
-        parameters: Vec<Binding<'a>>,
-        return_type: &'a str,
-        body: Expression<'a>
-    }
+    Method(MethodDeclaration<'a>)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MethodDeclaration<'a> {
+    pub(crate) receiver: Binding<'a, &'a str>,
+    pub(crate) specification: MethodSpecification<'a>,
+    pub(crate) body: Expression<'a>
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TypeLiteral<'a> {
     Struct {
         name: &'a str,
-        fields: Vec<Binding<'a>>
+        fields: Vec<Binding<'a, TypeEnum<'a>>>
     },
     Interface {
         name: &'a str,
@@ -103,10 +114,19 @@ pub(crate) enum TypeLiteral<'a> {
     }
 }
 
+impl<'a> TypeLiteral<'a> {
+    pub fn name(&self) -> &str {
+        match self {
+            TypeLiteral::Struct { name, .. } => name,
+            TypeLiteral::Interface { name, .. } => name
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Binding<'a> {
+pub(crate) struct Binding<'a, T> {
     pub(crate) name: &'a str,
-    pub(crate) type_: &'a str,
+    pub(crate) type_: T,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,7 +149,7 @@ pub(crate) enum Expression<'a> {
     },
     TypeAssertion {
         expression: Box<Expression<'a>>,
-        assert: &'a str
+        assert: TypeEnum<'a>
     },
     Number {
         value: u64
@@ -144,8 +164,8 @@ pub(crate) enum Expression<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MethodSpecification<'a> {
     pub(crate) name: &'a str,
-    pub(crate) parameters: Vec<Binding<'a>>,
-    pub(crate) return_type: &'a str,
+    pub(crate) parameters: Vec<Binding<'a, TypeEnum<'a>>>,
+    pub(crate) return_type: TypeEnum<'a>
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

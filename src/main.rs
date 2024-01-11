@@ -22,6 +22,6 @@ fn main() {
         let result = result.map_err(|_| println!("An error occurred while parsing the tokens")).unwrap();
 
         let mut type_checker = TypeChecker { program: &result, types: HashMap::new() };
-        type_checker.check_program();
+        type_checker.type_check();
     }
 }
