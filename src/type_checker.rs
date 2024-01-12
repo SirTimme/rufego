@@ -229,7 +229,6 @@ impl TypeChecker<'_> {
         match expression {
             Expression::Variable { name } => {
                 if let Some(var_type) = context.get(name) {
-                    // TODO w/o clone?
                     var_type.clone()
                 } else {
                     eprintln!("ERROR: Variable {:?} is unknown in this context", name);
@@ -264,6 +263,7 @@ impl TypeChecker<'_> {
                                             exit(1);
                                         }
 
+                                        // correct amount of parameters supplied?
                                         for (index, expression) in parameter_expressions.iter().enumerate() {
                                             if let Some(parameter) = declaration.specification.parameters.get(index) {
                                                 // evaluate type of supplied parameter
@@ -279,14 +279,41 @@ impl TypeChecker<'_> {
                                         // return type declared?
                                         self.check_type(&declaration.specification.return_type);
 
-                                        // TODO w/o clone?
                                         declaration.specification.return_type.clone()
                                     }
                                 }
                             }
-                            TypeInfo::Interface(_) => {
-                                eprintln!("ERROR: Method cant be called from an interface");
-                                exit(1);
+                            TypeInfo::Interface(methods) => {
+                                match methods.iter().find(|method_specification| &method_specification.name == method) {
+                                    None => {
+                                        eprintln!("ERROR: Interface {:?} doesn't have a method named {:?}", type_name, method);
+                                        exit(1);
+                                    }
+                                    Some(method_specification) => {
+                                        if parameter_expressions.len() != method_specification.parameters.len() {
+                                            eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, method_specification.parameters.len(), parameter_expressions.len());
+                                            exit(1);
+                                        }
+
+                                        // correct amount of parameters supplied?
+                                        for (index, expression) in parameter_expressions.iter().enumerate() {
+                                            if let Some(parameter) = method_specification.parameters.get(index) {
+                                                // evaluate type of supplied parameter
+                                                let expression_type = self.check_expression(expression, context);
+
+                                                if !self.is_subtype_of(&parameter.type_, &expression_type) {
+                                                    eprintln!("ERROR: Method parameter {:?} of method {:? } has type {:?} but type {:?} was supplied", parameter.name, method_specification.name, parameter.type_, expression_type);
+                                                    exit(1);
+                                                }
+                                            }
+                                        }
+
+                                        // return type declared?
+                                        self.check_type(&method_specification.return_type);
+
+                                        method_specification.return_type.clone()
+                                    }
+                                }
                             }
                         }
                     }
@@ -422,7 +449,7 @@ impl TypeChecker<'_> {
         // type info for child type
         let child_type_info = match self.types.get(self.type_name(child_type)) {
             None => {
-                eprintln!("Type {:?} is undeclared", child_type);
+                eprintln!("ERROR: Type {:?} is undeclared", child_type);
                 exit(1);
             }
             Some(type_info) => type_info
@@ -431,19 +458,19 @@ impl TypeChecker<'_> {
         // methods of parent type
         let methods = match parent_type {
             Type::Int => {
-                eprintln!("Integer doesn't have methods");
+                eprintln!("ERROR: Integer can't be the parent type of any type");
                 exit(1);
             }
             Type::Struct(type_name) => {
                 match self.types.get(type_name) {
                     None => {
-                        eprintln!("Cant find type {:?}", type_name);
+                        eprintln!("Type {:?} is undeclared", type_name);
                         exit(1);
                     }
                     Some(type_info) => {
                         match type_info {
                             TypeInfo::Struct(..) => {
-                                eprintln!("Only an interface can be a parent type");
+                                eprintln!("ERROR: Only an interface can be a parent type");
                                 exit(1);
                             }
                             TypeInfo::Interface(methods) => {
@@ -458,7 +485,7 @@ impl TypeChecker<'_> {
         // are all methods of the parent implemented for the child type?
         for method in methods.iter() {
             if child_type_info.method_spec(method.name).is_none() {
-                eprintln!("Method {:?} of parent type {:?} is not implemented for child type {:?}", method.name, parent_type, child_type);
+                eprintln!("ERROR: Method {:?} of parent type {:?} is not implemented for child type {:?}", method.name, parent_type, child_type);
                 return false;
             }
         }
