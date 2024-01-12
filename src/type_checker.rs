@@ -58,16 +58,16 @@ impl TypeChecker<'_> {
             if let Declaration::Method(method) = declaration {
                 match self.types.get_mut(method.receiver.type_) {
                     None => {
-                        eprintln!("ERROR: Method declaration for unknown type");
+                        eprintln!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_);
                         exit(1);
                     }
                     Some(TypeInfo::Interface(..)) => {
-                        eprintln!("ERROR: Cant implement interface method for interface");
+                        eprintln!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_);
                         exit(1);
                     }
                     Some(TypeInfo::Struct(.., methods)) => {
-                        if let Some(_) = methods.insert(method.specification.name, method) {
-                            eprintln!("ERROR: Duplicate method declaration with name {:?} for type {:?}", method.specification.name, method.receiver.type_);
+                        if methods.insert(method.specification.name, method).is_some() {
+                            eprintln!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_);
                             exit(1);
                         }
                     }
