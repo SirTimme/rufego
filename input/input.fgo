@@ -1,24 +1,24 @@
 package main;
 
-type IMessage interface {
-    send() IMessage
-    receive() message
+type message struct {
+    value int
 }
 
-type client struct {
-    msg message
+type client struct {}
+
+type handler interface {
+    sendMsg(content int) int
+    receiveMsg() int
 }
 
-type message struct {}
-
-func (client client) send() IMessage {
-    return client{ message{} }
+func (c client) sendMsg(content int) int {
+    return (message{ content }).value
 }
 
-func (client client) receive() message {
-    return message{}
+func (c client) receiveMsg() int {
+    return c.sendMsg(5)
 }
 
 func main() {
-    _ = message{}
+    _ = message{ (client{}).receiveMsg() }
 }
