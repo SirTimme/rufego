@@ -2,7 +2,6 @@ use std::collections::{HashMap};
 use std::process::exit;
 use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
-// TODO method call from interface?
 // TODO clone() loswerden
 
 pub(crate) struct TypeChecker<'a> {
