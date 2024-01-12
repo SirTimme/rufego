@@ -43,7 +43,7 @@ peg::parser!(
 
         rule type_() -> TypeEnum<'a>
             = [Int] { TypeEnum::Int }
-            / [Identifier(name)] {TypeEnum::Struct(name) }
+            / [Identifier(name)] { TypeEnum::Struct(name) }
 
         #[cache]
         rule expression() -> Expression<'a> = precedence!{
