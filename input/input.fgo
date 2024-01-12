@@ -1,16 +1,24 @@
 package main;
 
-func (x hello) build() hello {
-    return x.(hello)
+type IMessage interface {
+    send() IMessage
+    receive() message
 }
 
-type empty struct {}
+type client struct {
+    msg message
+}
 
-type hello struct {
-    a empty
-    b empty
+type message struct {}
+
+func (client client) send() IMessage {
+    return client{ message{} }
+}
+
+func (client client) receive() message {
+    return message{}
 }
 
 func main() {
-    _ = (hello{empty{},empty{}}).build()
+    _ = message{}
 }

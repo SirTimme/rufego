@@ -13,6 +13,7 @@ pub(crate) enum Type<'a> {
     Struct(&'a str),
 }
 
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
     Struct(&'a Vec<Binding<'a, Type<'a>>>, HashMap<&'a str, &'a MethodDeclaration<'a>>),
     Interface(&'a Vec<MethodSpecification<'a>>),
@@ -138,12 +139,10 @@ impl TypeChecker<'_> {
                 let expression_type = self.check_expression(body, &context);
 
                 // body type implement return type?
-                if expression_type != specification.return_type {
+                if !self.is_subtype_of(&specification.return_type, &expression_type) {
                     eprintln!("ERROR: Method {:?} has return type {:?}, body evaluates to type {:?} instead", specification.name, specification.return_type, expression_type);
                     exit(1);
                 }
-
-                // TODO check also for subtype
             }
         }
     }
@@ -267,7 +266,7 @@ impl TypeChecker<'_> {
                                                 // evaluate type of supplied parameter
                                                 let expression_type = self.check_expression(expression, context);
 
-                                                if expression_type != parameter.type_ {
+                                                if !self.is_subtype_of(&parameter.type_, &expression_type) {
                                                     eprintln!("ERROR: Method parameter {:?} has type {:?}, got type {:?} instead", parameter.name, parameter.type_, expression_type);
                                                     exit(1);
                                                 }
@@ -310,8 +309,7 @@ impl TypeChecker<'_> {
                                         // evaluate type of supplied parameter
                                         let field_type = self.check_expression(expression, context);
 
-                                        // TODO check also for subtype
-                                        if field_type != field.type_ {
+                                        if !self.is_subtype_of(&field.type_, &field_type) {
                                             eprintln!("ERROR: Field {:?} of type {:?} has type {:?}, got type {:?} instead", field.name, name, field.type_, field_type);
                                             exit(1);
                                         }
@@ -368,14 +366,41 @@ impl TypeChecker<'_> {
                 // asserted type declared?
                 self.check_type(assert);
 
+                // typeinfo for asserted type
+                let assert_type_info = match self.types.get(self.type_name(assert)) {
+                    None => {
+                        eprintln!("ERROR: Cant find Typeinfo for type {:?}", assert);
+                        exit(1);
+                    }
+                    Some(assert_type_info) => assert_type_info
+                };
+
+                // typeinfo for body type
                 let expression_type = self.check_expression(expression, context);
 
-                if &expression_type != assert {
-                    eprintln!("ERROR Asserted type was {:?}, actual type was {:?}", assert, expression_type);
-                    exit(1);
+                let body_type_info = match self.types.get(self.type_name(&expression_type)) {
+                    None => {
+                        eprintln!("ERROR: Cant find Typeinfo for type {:?}", assert);
+                        exit(1);
+                    }
+                    Some(body_type_info) => body_type_info
+                };
+
+                match (assert_type_info, body_type_info) {
+                    (TypeInfo::Interface(..), TypeInfo::Struct(..)) => {
+                        eprintln!("ERROR: Cant assert interface type on struct type");
+                        exit(1);
+                    }
+                    (TypeInfo::Struct(..),  TypeInfo::Interface(..)) => {
+                        if !self.is_subtype_of(&expression_type, assert) {
+                            eprintln!("ERROR: Asserted type {:?} is not a subtype of type {:?}", assert, expression_type);
+                            exit(1);
+                        }
+                    }
+                    (TypeInfo::Interface(..), TypeInfo::Interface(..)) => {}
+                    (TypeInfo::Struct(..), TypeInfo::Struct(..)) => {}
                 }
 
-                // TODO w/o clone?
                 assert.clone()
             }
             Expression::Number { .. } => {
@@ -392,6 +417,68 @@ impl TypeChecker<'_> {
                     exit(1);
                 }
             }
+        }
+    }
+
+    fn is_subtype_of(&self, parent_type: &Type, child_type: &Type) -> bool {
+        // a type is a subtype of itself
+        if parent_type == child_type {
+            return true
+        }
+
+        // type info for child type
+        let child_type_info = match self.types.get(self.type_name(child_type)){
+            None => {
+                eprintln!("Cant find type {:?}", child_type);
+                exit(1);
+            }
+            Some(type_info) => type_info
+        };
+
+        // methods of parent type
+        let methods = match parent_type {
+            Type::Int => {
+                eprintln!("Integer doesnt have methods");
+                exit(1);
+            }
+            Type::Struct(type_name) => {
+                match self.types.get(type_name) {
+                    None => {
+                        eprintln!("Cant find type {:?}", type_name);
+                        exit(1);
+                    }
+                    Some(type_info) => {
+                        match type_info {
+                            TypeInfo::Struct(..) => {
+                                eprintln!("Only an interface can be a parent type");
+                                exit(1);
+                            }
+                            TypeInfo::Interface(methods) => {
+                                methods
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        for method in methods.iter() {
+            if let None = child_type_info.method_spec(method.name) {
+                eprintln!("Type {:?} doesnt implement method {:?}", child_type, method.name);
+                return false
+            }
+        }
+
+        true
+    }
+
+    fn type_name<'a>(&self, type_: &'a Type) -> &'a str {
+        match type_ {
+            Type::Int => {
+                eprintln!("ERROR: No type name for integer");
+                exit(1);
+            }
+            Type::Struct(name) => name
         }
     }
 }
