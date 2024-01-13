@@ -239,38 +239,27 @@ impl TypeChecker<'_> {
                 }
             }
             Expression::MethodCall { expression, method, parameter_expressions } => {
-                let type_name = match self.check_expression(expression, context) {
-                    Type::Int => {
-                        eprintln!("ERROR: Body of method call {:?} evaluates to an integer", method);
-                        exit(1);
-                    }
-                    Type::Struct(name) => name
-                };
+                // evaluate type of the body expression
+                let expression_type = self.check_expression(expression, context);
 
-                match self.types.get(type_name) {
-                    None => {
-                        eprintln!("ERROR: Body of method call {:?} evaluates to an unknown type", method);
-                        exit(1);
-                    }
-                    Some(type_info) => {
-                        match type_info {
-                            TypeInfo::Struct(.., methods) => {
-                                match methods.get(method) {
-                                    None => {
-                                        eprintln!("ERROR: Method {:?} isn't implemented for type {:?}", method, type_name);
-                                        exit(1);
-                                    }
-                                    Some(declaration) => {
-                                        if parameter_expressions.len() != declaration.specification.parameters.len() {
-                                            eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, declaration.specification.parameters.len(), parameter_expressions.len());
-                                            exit(1);
-                                        }
+                // typeinfo for the body expression
+                let type_info = self.types.get(self.type_name(&expression_type)).expect("Expression can't evaluate to an unknown type");
 
-                                        // correct amount of parameters supplied?
-                                        for (index, expression) in parameter_expressions.iter().enumerate() {
-                                            if let Some(parameter) = declaration.specification.parameters.get(index) {
-                                                // evaluate type of supplied parameter
-                                                let expression_type = self.check_expression(expression, context);
+                match type_info {
+                    TypeInfo::Struct(.., methods) => {
+                        // is the method implemented for this type?
+                        match methods.get(method) {
+                            None => {
+                                eprintln!("ERROR: Method {:?} isn't implemented for type {:?}", method, expression_type);
+                                exit(1);
+                            }
+                            Some(declaration) => {
+                                // correct amount of parameters supplied?
+                                if parameter_expressions.len() != declaration.specification.parameters.len() {
+                                    eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, declaration.specification.parameters.len(), parameter_expressions.len());
+                                    exit(1);
+                                }
+
                                 // does the types of the parameter expressions match the types of the method parameters?
                                 for (index, expression) in parameter_expressions.iter().enumerate() {
                                     if let Some(parameter) = declaration.specification.parameters.get(index) {
@@ -288,21 +277,6 @@ impl TypeChecker<'_> {
                                 // is the return type declared?
                                 self.check_type(&declaration.specification.return_type);
 
-                                        declaration.specification.return_type.clone()
-                                    }
-                                }
-                            }
-                            TypeInfo::Interface(methods) => {
-                                match methods.iter().find(|method_specification| &method_specification.name == method) {
-                                    None => {
-                                        eprintln!("ERROR: Interface {:?} doesn't have a method named {:?}", type_name, method);
-                                        exit(1);
-                                    }
-                                    Some(method_specification) => {
-                                        if parameter_expressions.len() != method_specification.parameters.len() {
-                                            eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, method_specification.parameters.len(), parameter_expressions.len());
-                                            exit(1);
-                                        }
                                 declaration.specification.return_type.clone()
                             }
                         }
@@ -321,11 +295,6 @@ impl TypeChecker<'_> {
                                     exit(1);
                                 }
 
-                                        // correct amount of parameters supplied?
-                                        for (index, expression) in parameter_expressions.iter().enumerate() {
-                                            if let Some(parameter) = method_specification.parameters.get(index) {
-                                                // evaluate type of supplied parameter
-                                                let expression_type = self.check_expression(expression, context);
                                 for (index, expression) in parameter_expressions.iter().enumerate() {
                                     if let Some(parameter) = method_specification.parameters.get(index) {
                                         // evaluate type of the supplied parameter expression
@@ -394,46 +363,31 @@ impl TypeChecker<'_> {
                     Type::Struct(name) => name,
                 };
 
-                match self.types.get(type_name) {
-                    None => {
-                        eprintln!("ERROR: Type {:?} is undeclared", type_name);
-                        exit(1);
-                    }
-                    Some(type_info) => {
-                        match type_info {
-                            TypeInfo::Struct(fields, _) => {
-                                if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
-                                    field.type_.clone()
-                                } else {
-                                    eprintln!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var);
-                                    exit(1);
-                                }
-                            }
-                            TypeInfo::Interface(_) => {
-                                eprintln!("ERROR: An interface can't be selected");
-                                exit(1);
-                            }
+                let type_info = self.types.get(type_name).expect("Expression can't evaluate to an unknown type");
+
+                match type_info {
+                    TypeInfo::Struct(fields, _) => {
+                        if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
+                            field.type_.clone()
+                        } else {
+                            eprintln!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var);
+                            exit(1);
                         }
+                    }
+                    TypeInfo::Interface(_) => {
+                        eprintln!("ERROR: An interface can't be selected");
+                        exit(1);
                     }
                 }
             }
             Expression::TypeAssertion { expression, assert } => {
-                // asserted type declared?
                 self.check_type(assert);
 
-                // typeinfo for asserted type
-                let assert_type_info = self.types.get(self.type_name(assert)).expect("Should always find typeinfo since the presence of the type was checked beforehand");
+                let assert_type_info = self.types.get(self.type_name(assert)).expect("Asserted type was checked beforehand");
 
-                // expression type of the body
                 let expression_type = self.check_expression(expression, context);
 
-                let body_type_info = match self.types.get(self.type_name(&expression_type)) {
-                    None => {
-                        eprintln!("ERROR: Type {:?} is undeclared", expression_type);
-                        exit(1);
-                    }
-                    Some(body_type_info) => body_type_info
-                };
+                let body_type_info = self.types.get(self.type_name(&expression_type)).expect("Expression can't evaluate to an unknown type");
 
                 match (assert_type_info, body_type_info) {
                     (TypeInfo::Interface(..), TypeInfo::Struct(..)) => {
@@ -459,11 +413,20 @@ impl TypeChecker<'_> {
                 let lhs_type = self.check_expression(lhs, context);
                 let rhs_type = self.check_expression(rhs, context);
 
-                if lhs_type == Type::Int && rhs_type == Type::Int {
-                    Type::Int
-                } else {
-                    eprintln!("ERROR: Either lhs or rhs of a binary operation does not evaluate to an integer type");
-                    exit(1);
+                match (lhs_type, rhs_type) {
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::Struct(_), Type::Int) => {
+                        eprintln!("ERROR: Left operand of a binary operation doesn't evaluate to an integer type");
+                        exit(1);
+                    }
+                    (Type::Int, Type::Struct(_)) => {
+                        eprintln!("ERROR: Right operand of a binary operation doesn't evaluate to an integer type");
+                        exit(1);
+                    }
+                    (Type::Struct(_), Type::Struct(_)) => {
+                        eprintln!("ERROR: Both operands of a binary operation don't evaluate to an integer type");
+                        exit(1);
+                    }
                 }
             }
         }
@@ -475,16 +438,8 @@ impl TypeChecker<'_> {
             return true;
         }
 
-        // type info for child type
-        let child_type_info = match self.types.get(self.type_name(child_type)) {
-            None => {
-                eprintln!("ERROR: Type {:?} is undeclared", child_type);
-                exit(1);
-            }
-            Some(type_info) => type_info
-        };
+        let child_type_info = self.types.get(self.type_name(child_type)).expect("Function is only called with declared types");
 
-        // methods of parent type
         let methods = match parent_type {
             Type::Int => {
                 eprintln!("ERROR: Integer can't be the parent type of any type");
