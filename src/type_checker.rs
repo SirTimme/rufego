@@ -36,6 +36,7 @@ impl<'a> TypeInfo<'a> {
 
 impl TypeChecker<'_> {
     pub(crate) fn type_check(&mut self) {
+        // check all type declarations
         for declaration in &self.program.declarations {
             if let Declaration::Type { literal } = declaration {
                 if self.types.contains_key(literal.name()) {
@@ -56,6 +57,7 @@ impl TypeChecker<'_> {
             }
         }
 
+        // check all method declarations
         for declaration in &self.program.declarations {
             if let Declaration::Method(method) = declaration {
                 match self.types.get_mut(method.receiver.type_) {
@@ -87,12 +89,12 @@ impl TypeChecker<'_> {
             - body well formed in the empty context
      */
     fn check_program(&mut self) {
-        // declarations well formed?
+        // are the declarations well formed?
         for declaration in &self.program.declarations {
             self.check_declaration(declaration);
         }
 
-        // body well formed in the empty context?
+        // is the body well formed in the empty context?
         _ = self.check_expression(&self.program.expression, &HashMap::new());
     }
 
@@ -109,24 +111,25 @@ impl TypeChecker<'_> {
     fn check_declaration(&self, declaration: &Declaration) {
         match declaration {
             Declaration::Type { literal } => {
+                // is the type literal well formed?
                 self.check_type_literal(literal);
             }
             Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
-                // receiver type declared?
+                // is the receiver type declared?
                 self.check_type(&Type::Struct(receiver.type_));
 
                 for (index, parameter) in specification.parameters.iter().enumerate() {
-                    // parameter type declared?
+                    // is the parameter type declared?
                     self.check_type(&parameter.type_);
 
-                    // parameter names distinct?
+                    // are the parameter names distinct?
                     if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
                         eprintln!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name);
                         exit(1);
                     }
                 }
 
-                // return-type declared?
+                // is the return-type declared?
                 self.check_type(&specification.return_type);
 
                 // build type context
@@ -137,10 +140,10 @@ impl TypeChecker<'_> {
                     context.insert(parameter.name, parameter.type_.clone());
                 }
 
-                // determine type of body
+                // evaluate type of body expression
                 let expression_type = self.check_expression(body, &context);
 
-                // body type implement return type?
+                // is the body type at least a subtype of the return type?
                 if !self.is_subtype_of(&specification.return_type, &expression_type) {
                     eprintln!("ERROR: Body expression of method {:?} evaluates to type {:?} which isn't a subtype of {:?}", specification.name, expression_type, specification.return_type, );
                     exit(1);
@@ -162,10 +165,10 @@ impl TypeChecker<'_> {
         match type_literal {
             TypeLiteral::Struct { name, fields } => {
                 for (index, field) in fields.iter().enumerate() {
-                    // field type declared?
+                    // is the field type declared?
                     self.check_type(&field.type_);
 
-                    // field names distinct?
+                    // are the field names distinct?
                     if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
                         eprintln!("ERROR: Duplicate field name {:?} for struct {:?}", field.name, name);
                         exit(1);
@@ -174,10 +177,10 @@ impl TypeChecker<'_> {
             }
             TypeLiteral::Interface { name, methods: method_specifications } => {
                 for (index, method_specification) in method_specifications.iter().enumerate() {
-                    // method specification well formed?
+                    // is the method specification well formed?
                     self.check_method_specification(method_specification);
 
-                    // method name unique?
+                    // are the method names unique?
                     if method_specifications.iter().skip(index + 1).any(|element| element.name == method_specification.name) {
                         eprintln!("ERROR: Duplicate interface method {:?} for interface {:?}", method_specification.name, name);
                         exit(1);
@@ -194,17 +197,17 @@ impl TypeChecker<'_> {
      */
     fn check_method_specification(&self, method_specification: &MethodSpecification) {
         for (index, parameter) in method_specification.parameters.iter().enumerate() {
-            // parameter type declared?
+            // is the parameter type declared?
             self.check_type(&parameter.type_);
 
-            // method parameters distinct?
+            // are the method parameters distinct?
             if method_specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
                 eprintln!("ERROR: Duplicate parameter name {:?} for method {:?}", parameter.name, method_specification.name);
                 exit(1);
             }
         }
 
-        // return types declared?
+        // is the return type declared?
         self.check_type(&method_specification.return_type);
     }
 
@@ -212,7 +215,7 @@ impl TypeChecker<'_> {
         Judgement t ok => type t is declared
     */
     fn check_type(&self, type_: &Type) {
-        // type declared?
+        // is the type declared?
         match type_ {
             Type::Int => (),
             Type::Struct(name) => {
@@ -227,6 +230,7 @@ impl TypeChecker<'_> {
     fn check_expression<'a>(&'a self, expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>) -> Type<'a> {
         match expression {
             Expression::Variable { name } => {
+                // variable known in this context?
                 if let Some(var_type) = context.get(name) {
                     var_type.clone()
                 } else {
@@ -267,16 +271,22 @@ impl TypeChecker<'_> {
                                             if let Some(parameter) = declaration.specification.parameters.get(index) {
                                                 // evaluate type of supplied parameter
                                                 let expression_type = self.check_expression(expression, context);
+                                // does the types of the parameter expressions match the types of the method parameters?
+                                for (index, expression) in parameter_expressions.iter().enumerate() {
+                                    if let Some(parameter) = declaration.specification.parameters.get(index) {
+                                        // evaluate type of the supplied parameter expression
+                                        let expression_type = self.check_expression(expression, context);
 
-                                                if !self.is_subtype_of(&parameter.type_, &expression_type) {
-                                                    eprintln!("ERROR: Method parameter {:?} of method {:? } has type {:?} but type {:?} was supplied", parameter.name, declaration.specification.name, parameter.type_, expression_type);
-                                                    exit(1);
-                                                }
-                                            }
+                                        // is the parameter at least a subtype of the method parameter?
+                                        if !self.is_subtype_of(&parameter.type_, &expression_type) {
+                                            eprintln!("ERROR: Method parameter {:?} of method {:? } has type {:?} but type {:?} was supplied", parameter.name, declaration.specification.name, parameter.type_, expression_type);
+                                            exit(1);
                                         }
+                                    }
+                                }
 
-                                        // return type declared?
-                                        self.check_type(&declaration.specification.return_type);
+                                // is the return type declared?
+                                self.check_type(&declaration.specification.return_type);
 
                                         declaration.specification.return_type.clone()
                                     }
@@ -293,26 +303,46 @@ impl TypeChecker<'_> {
                                             eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, method_specification.parameters.len(), parameter_expressions.len());
                                             exit(1);
                                         }
+                                declaration.specification.return_type.clone()
+                            }
+                        }
+                    }
+                    TypeInfo::Interface(methods) => {
+                        // does the method exist on the interface?
+                        match methods.iter().find(|method_specification| &method_specification.name == method) {
+                            None => {
+                                eprintln!("ERROR: Interface {:?} doesn't have a method named {:?}", expression_type, method);
+                                exit(1);
+                            }
+                            Some(method_specification) => {
+                                // correct amount of parameters supplied?
+                                if parameter_expressions.len() != method_specification.parameters.len() {
+                                    eprintln!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, method_specification.parameters.len(), parameter_expressions.len());
+                                    exit(1);
+                                }
 
                                         // correct amount of parameters supplied?
                                         for (index, expression) in parameter_expressions.iter().enumerate() {
                                             if let Some(parameter) = method_specification.parameters.get(index) {
                                                 // evaluate type of supplied parameter
                                                 let expression_type = self.check_expression(expression, context);
+                                for (index, expression) in parameter_expressions.iter().enumerate() {
+                                    if let Some(parameter) = method_specification.parameters.get(index) {
+                                        // evaluate type of the supplied parameter expression
+                                        let expression_type = self.check_expression(expression, context);
 
-                                                if !self.is_subtype_of(&parameter.type_, &expression_type) {
-                                                    eprintln!("ERROR: Method parameter {:?} of method {:? } has type {:?} but type {:?} was supplied", parameter.name, method_specification.name, parameter.type_, expression_type);
-                                                    exit(1);
-                                                }
-                                            }
+                                        // is the parameter at least a subtype of the method parameter?
+                                        if !self.is_subtype_of(&parameter.type_, &expression_type) {
+                                            eprintln!("ERROR: Method parameter {:?} of method {:? } has type {:?} but type {:?} was supplied", parameter.name, method_specification.name, parameter.type_, expression_type);
+                                            exit(1);
                                         }
-
-                                        // return type declared?
-                                        self.check_type(&method_specification.return_type);
-
-                                        method_specification.return_type.clone()
                                     }
                                 }
+
+                                // is the return type declared?
+                                self.check_type(&method_specification.return_type);
+
+                                method_specification.return_type.clone()
                             }
                         }
                     }
