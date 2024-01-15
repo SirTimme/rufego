@@ -1,24 +1,22 @@
 package main;
 
-type message struct {
-    value int
+type container interface {
+    createConsumer(newValue int) container
+    getValue() int
 }
 
-type client struct {}
-
-type handler interface {
-    sendMsg(content int) int
-    receiveMsg() int
+type consumer struct {
+    amount int
 }
 
-func (c client) sendMsg(content int) int {
-    return (message{ content }).value
+func (c consumer) createConsumer(new int) container {
+    return consumer{ new }
 }
 
-func (c client) receiveMsg() int {
-    return c.sendMsg(5)
+func (c consumer) getValue() int {
+    return c.amount
 }
 
 func main() {
-    _ = message{ (client{}).receiveMsg() }
+    _ = ((consumer{ 0 }).createConsumer(42).getValue()) + 5
 }
