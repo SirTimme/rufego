@@ -28,6 +28,6 @@ fn main() {
 
         check_program(&result, &type_infos);
 
-        eprintln!("Result of program is {:?}", evaluate(&result.expression, &HashMap::new(), &type_infos));
+        eprintln!("Result of program is: {}", evaluate(&result.expression, &HashMap::new(), &type_infos));
     }
 }
