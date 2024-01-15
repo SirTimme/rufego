@@ -467,10 +467,31 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
 
     // are all methods of the parent implemented for the child type?
     for method in methods.iter() {
-        // TODO check for same parameter and return type
-        if child_type_info.method_spec(method.name).is_none() {
-            eprintln!("ERROR: Method {:?} of parent type {:?} is not implemented for child type {:?}", method.name, parent_type, child_type);
-            return false;
+        match child_type_info.method_spec(method.name) {
+            None => {
+                eprintln!("ERROR: Method {:?} of parent type {:?} is not implemented for child type {:?}", method.name, parent_type, child_type);
+                return false;
+            }
+            Some(method_spec) => {
+                if method.return_type != method_spec.return_type {
+                    eprintln!("ERROR: Method {:?} of parent type {:?} has return type {:?} but return type of child implementation is {:?}", method.name, parent_type, method.return_type, method_spec.return_type);
+                    return false;
+                }
+
+                if method.parameters.len() != method_spec.parameters.len() {
+                    eprintln!("ERROR: Method {:?} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len());
+                    return false;
+                }
+
+                for (index, method_parameter) in method.parameters.iter().enumerate() {
+                    let child_method_parameter = method_spec.parameters.get(index).expect("Method parameter should be supplied");
+
+                    if child_method_parameter.type_ != method_parameter.type_ {
+                        eprintln!("ERROR: Method parameter {:?} of method {:?} of parent type {:?} has type {:?} but parameter type of child implementation is {:?}", method_parameter.type_, method.name, parent_type, method.return_type, child_method_parameter);
+                        return false;
+                    }
+                }
+            }
         }
     }
 
