@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::process::exit;
 use parser::{Expression, Operator};
 use type_checker::{is_subtype_of, Type, TypeInfo};
@@ -7,6 +8,19 @@ use type_checker::{is_subtype_of, Type, TypeInfo};
 pub(crate) enum Value<'a> {
     Int(i64),
     Struct(&'a str, Vec<Value<'a>>),
+}
+
+impl Display for Value<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Int(number) => {
+                write!(f, "{}", number)
+            }
+            Value::Struct(name, fields) => {
+                write!(f, "{} {{ {:?} }}", name, fields)
+            }
+        }
+    }
 }
 
 pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Value<'a> {
@@ -22,17 +36,35 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     eprintln!("Can't call a method on an integer value");
                     exit(1);
                 }
-                Value::Struct(name, _) => {
+                Value::Struct(name, values) => {
                     let type_info = types.get(name).expect("Type name should exist");
 
                     match type_info {
-                        TypeInfo::Struct(_, _) => {}
-                        TypeInfo::Interface(_) => {}
+                        TypeInfo::Struct(_, methods) => {
+                            let method_declaration = methods.get(method).expect("Type should implement this method");
+
+                            let mut local_context = HashMap::new();
+
+                            local_context.insert(method_declaration.receiver.name, Value::Struct(method_declaration.receiver.type_, values));
+
+                            for (index, expression) in parameter_expressions.iter().enumerate() {
+                                if let Some(parameter) = method_declaration.specification.parameters.get(index) {
+                                    // evaluate type of the supplied parameter expression
+                                    let expression_type = evaluate(expression, context, types);
+
+                                    local_context.insert(parameter.name, expression_type);
+                                }
+                            }
+
+                            evaluate(&method_declaration.body, &local_context, types)
+                        }
+                        TypeInfo::Interface(_) => {
+                            eprintln!("Interface cant be called inside a methods body");
+                            exit(1);
+                        }
                     }
                 }
             }
-
-            todo!()
         }
         Expression::StructLiteral { name, field_expressions } => {
             let mut values = Vec::new();
