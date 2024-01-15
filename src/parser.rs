@@ -118,7 +118,7 @@ impl<'a> TypeLiteral<'a> {
     pub fn name(&self) -> &str {
         match self {
             TypeLiteral::Struct { name, .. } => name,
-            TypeLiteral::Interface { name, .. } => name
+            TypeLiteral::Interface { name, .. } => name,
         }
     }
 }
@@ -152,7 +152,7 @@ pub(crate) enum Expression<'a> {
         assert: TypeEnum<'a>
     },
     Number {
-        value: u64
+        value: i64
     },
     BinOp {
         lhs: Box<Expression<'a>>,
