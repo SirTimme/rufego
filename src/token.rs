@@ -47,8 +47,6 @@ pub enum Token<'a> {
     Identifier(&'a str),
     #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
     Number(i64),
-    #[regex("\"[a-zA-Z0-9 ]+\"")]
-    String,
     #[token("func")]
     Function,
     #[token("interface")]
