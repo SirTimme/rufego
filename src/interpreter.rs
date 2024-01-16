@@ -23,7 +23,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
             match value {
                 Value::Int(_) => {
-                    return Err(EvalError { message: String::from("ERROR: Can't call a method on an integer value") });
+                    Err(EvalError { message: String::from("ERROR: Can't call a method on an integer value") })
                 }
                 Value::Struct(name, values) => {
                     let type_info = types.get(name).expect("Type name should exist");
@@ -48,7 +48,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                             Ok(evaluate(&method_declaration.body, &local_context, types)?)
                         }
                         TypeInfo::Interface(_) => {
-                            return Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") });
+                            Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") })
                         }
                     }
                 }
@@ -69,7 +69,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
             match value {
                 Value::Int(_) => {
-                    return Err(EvalError { message: String::from("An integer value doesn't have fields") });
+                    Err(EvalError { message: String::from("An integer value doesn't have fields") })
                 }
                 Value::Struct(name, struct_values) => {
                     let type_info = types.get(name).expect("Value can only be a declared struct");
@@ -79,7 +79,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
                         Ok(struct_values.get(field_index).expect("Field should exists").clone())
                     } else {
-                        return Err(EvalError { message: String::from("Cant instantiate an interface literal") });
+                        Err(EvalError { message: String::from("Cant instantiate an interface literal") })
                     }
                 }
             }
@@ -120,7 +120,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     }
                 }
                 _ => {
-                    return Err(EvalError { message: String::from("ERROR: LHS or RHS of a binary operation doesnt have a integer type") });
+                    Err(EvalError { message: String::from("ERROR: LHS or RHS of a binary operation doesnt have a integer type") })
                 }
             }
         }

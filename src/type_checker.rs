@@ -46,10 +46,10 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields, .. } => {
-                        TypeInfo::Struct(&fields, HashMap::new())
+                        TypeInfo::Struct(fields, HashMap::new())
                     }
                     TypeLiteral::Interface { methods, .. } => {
-                        TypeInfo::Interface(&methods)
+                        TypeInfo::Interface(methods)
                     }
                 };
 
@@ -69,7 +69,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                     return Err(TypeError { message: format!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_) });
                 }
                 Some(TypeInfo::Struct(.., methods)) => {
-                    if methods.insert(method.specification.name, &method).is_some() {
+                    if methods.insert(method.specification.name, method).is_some() {
                         return Err(TypeError { message: format!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_) });
                     }
                 }
@@ -350,11 +350,11 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
                     if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
                         Ok(field.type_.clone())
                     } else {
-                        return Err(TypeError { message: format!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var) });
+                        Err(TypeError { message: format!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var) })
                     }
                 }
                 TypeInfo::Interface(_) => {
-                    return Err(TypeError { message: String::from("ERROR: An interface can't be selected") });
+                    Err(TypeError { message: String::from("ERROR: An interface can't be selected") })
                 }
             }
         }
@@ -465,9 +465,7 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
 
 fn type_name<'a>(type_: &'a Type) -> Result<&'a str, TypeError> {
     match type_ {
-        Type::Int => {
-            return Err(TypeError { message: String::from("ERROR: No type name for integer") });
-        }
+        Type::Int => Err(TypeError { message: String::from("ERROR: No type name for integer") }),
         Type::Struct(name) => Ok(name),
     }
 }
