@@ -5,7 +5,7 @@ peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {
         use Token::*;
 
-        pub(crate) rule program() -> Program<'a>
+        pub(crate) rule parse() -> Program<'a>
             = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] expression:expression() [RightCurlyBrace] {
                 Program { declarations, expression: Box::new(expression) }
             }

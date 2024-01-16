@@ -9,25 +9,50 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use peg::error::ParseError;
 use interpreter::{evaluate};
-use parser::{Program};
-use parser::language::program;
-use token::Token;
+use parser::language::parse;
+use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program};
 
 fn main() {
     if let Ok(source) = read_to_string("input/input.fgo") {
-        let tokens: Result<Vec<Token>, ()> = Token::lexer(&source).collect();
-        let tokens = tokens.map_err(|_| println!("ERROR: Lexer encountered an unknown token")).unwrap();
+        let token_result: Result<Vec<Token>, LexerError> = Token::lexer(&source).collect();
 
-        let result: Result<Program, ParseError<usize>> = program(&tokens);
-        let result = result.map_err(|error| println!("ERROR: {error}")).unwrap();
-
-        let type_infos = build_type_infos(&result);
-
-        check_program(&result, &type_infos);
-
-        eprintln!("Result of program is: {}", evaluate(&result.expression, &HashMap::new(), &type_infos));
+        match token_result {
+            Ok(tokens) => {
+                match parse(&tokens) {
+                    Ok(program) => {
+                        match build_type_infos(&program) {
+                            Ok(type_infos) => {
+                                match check_program(&program, &type_infos) {
+                                    Ok(_) => {
+                                        match evaluate(&program.expression, &HashMap::new(), &type_infos) {
+                                            Ok(value) => {
+                                                eprintln!("Program evaluates to {:?}", value);
+                                            }
+                                            Err(eval_error) => {
+                                                eprintln!("Evaluation of program failed with following error: {:?}", eval_error.message);
+                                            }
+                                        }
+                                    }
+                                    Err(type_error) => {
+                                        eprintln!("Typechecking failed with the following error: {:?}", type_error.message);
+                                    }
+                                }
+                            }
+                            Err(type_info_error) => {
+                                eprintln!("Creating the type infos failed with the following error: {:?}", type_info_error.message);
+                            }
+                        }
+                    }
+                    Err(parser_error) => {
+                        eprintln!("Parsing failed with the following error: {parser_error}")
+                    }
+                }
+            }
+            Err(lexer_error) => {
+                eprintln!("Lexing the source failed with the following error: {:?}", lexer_error)
+            }
+        }
     }
 }
