@@ -67,7 +67,7 @@ fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
 fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, types) {
         Ok(value) => {
-            eprintln!("Program evaluates to {:?}", value);
+            println!("Program evaluates to {:?}", value);
         }
         Err(eval_error) => {
             eprintln!("Evaluation of program failed with following error: {:?}", eval_error.message);
