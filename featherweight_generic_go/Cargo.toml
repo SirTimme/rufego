@@ -1,0 +1,5 @@
+[package]
+name = "featherweight_generic_go"
+version = "0.0.1"
+
+[dependencies]
