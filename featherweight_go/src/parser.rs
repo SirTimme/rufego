@@ -12,7 +12,7 @@ peg::parser!(
 
         rule declaration() -> Declaration<'a>
             = [Function] [LeftParenthesis] receiver:binding_string() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
-                Declaration::Method(MethodDeclaration{ receiver, specification: MethodSpecification{ name, parameters, return_type }, body })
+                Declaration::Method(MethodDeclaration { receiver, specification: MethodSpecification { name, parameters, return_type }, body })
             }
             / literal:type_literal() {
                 Declaration::Type { literal }

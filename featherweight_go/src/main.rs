@@ -16,7 +16,7 @@ use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program, TypeInfo};
 
 fn main() {
-    read_input("input/input.fgo");
+    read_input("featherweight_go/input/input.go");
 }
 
 fn read_input(filename: &str) {

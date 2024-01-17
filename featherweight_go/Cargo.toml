@@ -1,5 +1,5 @@
 [package]
-name = "rufego"
+name = "featherweight_go"
 version = "0.0.1"
 
 [dependencies]
