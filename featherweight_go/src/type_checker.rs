@@ -45,12 +45,8 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                 return Err(TypeError { message: format!("ERROR: Type {:?} already declared", name) });
             } else {
                 let type_info = match literal {
-                    TypeLiteral::Struct { fields } => {
-                        TypeInfo::Struct(fields, HashMap::new())
-                    }
-                    TypeLiteral::Interface { methods } => {
-                        TypeInfo::Interface(methods)
-                    }
+                    TypeLiteral::Struct { fields } => TypeInfo::Struct(fields, HashMap::new()),
+                    TypeLiteral::Interface { methods } => TypeInfo::Interface(methods),
                 };
 
                 types.insert(*name, type_info);
