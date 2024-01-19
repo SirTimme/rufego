@@ -3,3 +3,5 @@ name = "featherweight_generic_go"
 version = "0.0.1"
 
 [dependencies]
+logos = "0.13.0"
+peg = "0.8.2"
