@@ -14,27 +14,17 @@ peg::parser!(
             = [Function] [LeftParenthesis] receiver:binding_string() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
                 Declaration::Method(MethodDeclaration { receiver, specification: MethodSpecification { name, parameters, return_type }, body })
             }
-            / literal:type_literal() {
-                Declaration::Type { literal }
-            }
+            / [Type] [Identifier(name)] literal:type_literal() { Declaration::Type { name, literal } }
 
         rule type_literal() -> TypeLiteral<'a>
-            = [Type] [Identifier(name)] [Struct] [LeftCurlyBrace] fields:binding_type()* [RightCurlyBrace] {
-                TypeLiteral::Struct { name, fields }
-            }
-            / [Type] [Identifier(name)] [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] {
-                TypeLiteral::Interface { name, methods }
-            }
+            = [Struct] [LeftCurlyBrace] fields:binding_type()* [RightCurlyBrace] { TypeLiteral::Struct { fields } }
+            / [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
 
         rule binding_string() -> Binding<'a, &'a str>
-            = [Identifier(name)] [Identifier(type_)] [Comma]? {
-                Binding { name, type_ }
-            }
+            = [Identifier(name)] [Identifier(type_)] [Comma]? { Binding { name, type_ } }
 
         rule binding_type() -> Binding<'a, TypeEnum<'a>>
-            = [Identifier(name)] type_:type_() [Comma]? {
-                Binding { name, type_ }
-            }
+            = [Identifier(name)] type_:type_() [Comma]? { Binding { name, type_ } }
 
         rule method_body() -> MethodSpecification<'a>
             = [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() {
@@ -90,6 +80,7 @@ pub(crate) struct Program<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Declaration<'a> {
     Type {
+        name: &'a str,
         literal: TypeLiteral<'a>
     },
     Method(MethodDeclaration<'a>)
@@ -105,21 +96,10 @@ pub(crate) struct MethodDeclaration<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TypeLiteral<'a> {
     Struct {
-        name: &'a str,
         fields: Vec<Binding<'a, TypeEnum<'a>>>
     },
     Interface {
-        name: &'a str,
         methods: Vec<MethodSpecification<'a>>
-    }
-}
-
-impl<'a> TypeLiteral<'a> {
-    pub fn name(&self) -> &str {
-        match self {
-            TypeLiteral::Struct { name, .. } => name,
-            TypeLiteral::Interface { name, .. } => name,
-        }
     }
 }
 

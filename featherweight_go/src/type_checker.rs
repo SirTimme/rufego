@@ -40,20 +40,20 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
 
     // check all type declarations
     for declaration in &program.declarations {
-        if let Declaration::Type { literal } = declaration {
-            if types.contains_key(literal.name()) {
-                return Err(TypeError { message: format!("ERROR: Type {:?} already declared", literal.name()) });
+        if let Declaration::Type { name, literal } = declaration {
+            if types.contains_key(name) {
+                return Err(TypeError { message: format!("ERROR: Type {:?} already declared", name) });
             } else {
                 let type_info = match literal {
-                    TypeLiteral::Struct { fields, .. } => {
+                    TypeLiteral::Struct { fields } => {
                         TypeInfo::Struct(fields, HashMap::new())
                     }
-                    TypeLiteral::Interface { methods, .. } => {
+                    TypeLiteral::Interface { methods } => {
                         TypeInfo::Interface(methods)
                     }
                 };
 
-                types.insert(literal.name(), type_info);
+                types.insert(*name, type_info);
             }
         }
     }
@@ -108,9 +108,9 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a st
  */
 fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     match declaration {
-        Declaration::Type { literal } => {
+        Declaration::Type { name, literal } => {
             // is the type literal well formed?
-            check_type_literal(literal, types)?;
+            check_type_literal(name, literal, types)?;
         }
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
             // is the receiver type declared?
@@ -157,9 +157,9 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str,
             - all its method specifications are well formed
             - all method names are unique
  */
-fn check_type_literal<'a>(type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     match type_literal {
-        TypeLiteral::Struct { name, fields } => {
+        TypeLiteral::Struct { fields } => {
             for (index, field) in fields.iter().enumerate() {
                 // is the field type declared?
                 check_type(&field.type_, types)?;
@@ -170,7 +170,7 @@ fn check_type_literal<'a>(type_literal: &TypeLiteral, types: &HashMap<&'a str, T
                 }
             }
         }
-        TypeLiteral::Interface { name, methods: method_specifications } => {
+        TypeLiteral::Interface { methods: method_specifications } => {
             for (index, method_specification) in method_specifications.iter().enumerate() {
                 // is the method specification well formed?
                 check_method_specification(method_specification, types)?;
@@ -446,7 +446,7 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
                 }
 
                 if method.parameters.len() != method_spec.parameters.len() {
-                    return Err(TypeError { message:  format!("ERROR: Method {:?} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len()) });
+                    return Err(TypeError { message: format!("ERROR: Method {:?} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len()) });
                 }
 
                 for (index, method_parameter) in method.parameters.iter().enumerate() {
