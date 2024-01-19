@@ -243,12 +243,12 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
                     // is the method implemented for this type?
                     match methods.get(method) {
                         None => {
-                            Err(TypeError { message: format!("ERROR: Method {:?} isn't implemented for type {:?}", method, expression_type) })
+                            Err(TypeError { message: format!("ERROR: Method '{method}' isn't implemented for type {:?}", expression_type) })
                         }
                         Some(declaration) => {
                             // correct amount of parameters supplied?
                             if parameter_expressions.len() != declaration.specification.parameters.len() {
-                                return Err(TypeError { message: format!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, declaration.specification.parameters.len(), parameter_expressions.len()) });
+                                return Err(TypeError { message: format!("ERROR: Method '{method}' expects {:?} parameters but {:?} parameters were supplied", declaration.specification.parameters.len(), parameter_expressions.len()) });
                             }
 
                             // does the types of the parameter expressions match the types of the method parameters?
