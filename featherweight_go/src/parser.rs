@@ -6,19 +6,19 @@ peg::parser!(
         use Token::*;
 
         pub(crate) rule parse() -> Program<'a>
-            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] expression:expression() [RightCurlyBrace] {
-                Program { declarations, expression: Box::new(expression) }
+            = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] body:expression() [RightCurlyBrace] {
+                Program { declarations, expression: Box::new(body) }
             }
 
         rule declaration() -> Declaration<'a>
-            = [Function] [LeftParenthesis] receiver:binding_string() [RightParenthesis] [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
-                Declaration::Method(MethodDeclaration { receiver, specification: MethodSpecification { name, parameters, return_type }, body })
+            = [Function] [LeftParenthesis] receiver:binding_string() [RightParenthesis] specification:method_specification() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
+                Declaration::Method(MethodDeclaration { receiver, specification, body })
             }
             / [Type] [Identifier(name)] literal:type_literal() { Declaration::Type { name, literal } }
 
         rule type_literal() -> TypeLiteral<'a>
             = [Struct] [LeftCurlyBrace] fields:binding_type()* [RightCurlyBrace] { TypeLiteral::Struct { fields } }
-            / [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
+            / [Interface] [LeftCurlyBrace] methods:method_specification()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
 
         rule binding_string() -> Binding<'a, &'a str>
             = [Identifier(name)] [Identifier(type_)] [Comma]? { Binding { name, type_ } }
@@ -26,47 +26,28 @@ peg::parser!(
         rule binding_type() -> Binding<'a, TypeEnum<'a>>
             = [Identifier(name)] type_:type_() [Comma]? { Binding { name, type_ } }
 
-        rule method_body() -> MethodSpecification<'a>
-            = [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() {
-                MethodSpecification { name, parameters, return_type }
-            }
+        rule method_specification() -> MethodSpecification<'a>
+            = [Identifier(name)] [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() { MethodSpecification { name, parameters, return_type } }
 
         rule type_() -> TypeEnum<'a>
             = [Int] { TypeEnum::Int }
             / [Identifier(name)] { TypeEnum::Struct(name) }
 
-        #[cache]
         rule expression() -> Expression<'a> = precedence!{
-            lhs:(@) [Plus] rhs:@ {
-                Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) }
-            }
+            lhs:(@) [Plus] rhs:@ { Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Add, rhs: Box::new(rhs) } }
             --
-            lhs:(@) [Star] rhs:@ { Expression::BinOp {
-                lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
-            }
+            lhs:(@) [Star] rhs:@ { Expression::BinOp { lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) } }
             --
-            expression:(@) [Dot] [LeftParenthesis] assert:type_() [RightParenthesis] {
-                Expression::TypeAssertion { expression: Box::new(expression), assert }
-            }
+            expression:(@) [Dot] [LeftParenthesis] assert:type_() [RightParenthesis] { Expression::TypeAssertion { expression: Box::new(expression), assert } }
             expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
                 Expression::MethodCall { expression: Box::new(expression), method, parameter_expressions }
             }
-            expression:(@) [Dot] [Identifier(field)] {
-                Expression::Select { expression: Box::new(expression), field }
-            }
+            expression:(@) [Dot] [Identifier(field)] { Expression::Select { expression: Box::new(expression), field } }
             --
-            [Identifier(name)] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
-                Expression::StructLiteral { name, field_expressions }
-            }
-            [Identifier(name)] {
-                Expression::Variable { name }
-            }
-            [Number(value)] {
-                Expression::Number { value }
-            }
-            [LeftParenthesis] expression:expression() [RightParenthesis] {
-                expression
-            }
+            [Identifier(name)] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] { Expression::StructLiteral { name, field_expressions } }
+            [Identifier(name)] { Expression::Variable { name } }
+            [Number(value)] { Expression::Number { value } }
+            [LeftParenthesis] expression:expression() [RightParenthesis] { expression }
         }
     }
 );
