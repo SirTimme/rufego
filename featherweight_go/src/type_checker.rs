@@ -1,9 +1,11 @@
 use std::collections::{HashMap};
 use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
-// TODO clone() loswerden
-// TODO ok to use String here?
-// TODO Self recursion in struct
+// TODO ok to use String for error messages?
+// TODO int subtype of anything?
+// TODO assert for int?
+// TODO Struct Self recursion: stage type checking or evaluating? (argument: precondistions for well formed sind erfüllt)
+// TODO cycle detection...
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum Type<'a> {
@@ -160,6 +162,11 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &Has
             for (index, field) in fields.iter().enumerate() {
                 // is the field type declared?
                 check_type(&field.type_, types)?;
+
+                // no self recursion in structs
+                if field.type_ != Type::Int && type_name(&field.type_)? == name {
+                    return Err(TypeError { message: format!("ERROR: Struct {name} has self recursion on field {:?} which is forbidden", field.name) });
+                }
 
                 // are the field names distinct?
                 if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
