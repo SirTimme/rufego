@@ -33,7 +33,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                             let method_declaration = methods.get(method).expect("Type should implement this method");
 
                             // check for recursive method call
-                            if method == &method_declaration.specification.name {
+                            if is_recursive_methodcall(&method_declaration.body) {
                                 return Err(EvalError { message: format!("ERROR: Body of method {:?} contains a recursive method call", method_declaration.specification.name) });
                             }
 
@@ -130,4 +130,9 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
             }
         }
     }
+}
+
+fn is_recursive_methodcall(expression: &Expression) -> bool {
+    eprintln!("{:#?}", expression);
+    false
 }
