@@ -164,7 +164,7 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &Has
                 check_type(&field.type_, types)?;
 
                 // no self recursion in structs
-                if field.type_ != Type::Int && type_name(&field.type_)? == name {
+                if type_name(&field.type_) == name {
                     return Err(TypeError { message: format!("ERROR: Struct {name} has self recursion on field {:?} which is forbidden", field.name) });
                 }
 
@@ -244,7 +244,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             let expression_type = check_expression(expression, context, types)?;
 
             // typeinfo for the body expression
-            let type_info = types.get(type_name(&expression_type)?).expect("ERROR: Expression can't evaluate to an unknown type");
+            let type_info = types.get(type_name(&expression_type)).expect("ERROR: Expression can't evaluate to an unknown type");
 
             match type_info {
                 TypeInfo::Struct(.., methods) => {
@@ -363,13 +363,14 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             }
         }
         Expression::TypeAssertion { expression, assert } => {
+            // asserted type declared?
             check_type(assert, types)?;
 
-            let assert_type_info = types.get(type_name(assert)?).expect("Asserted type was checked beforehand");
+            let assert_type_info = types.get(type_name(assert)).expect("Asserted type was checked beforehand");
 
             let expression_type = check_expression(expression, context, types)?;
 
-            let body_type_info = types.get(type_name(&expression_type)?).expect("Expression can't evaluate to an unknown type");
+            let body_type_info = types.get(type_name(&expression_type)).expect("Expression can't evaluate to an unknown type");
 
             match (assert_type_info, body_type_info) {
                 (TypeInfo::Interface(..), TypeInfo::Struct(..)) => {
@@ -413,7 +414,7 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
         return Ok(());
     }
 
-    let child_type_info = types.get(type_name(child_type)?).expect("Function is only called with declared types");
+    let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
 
     let methods = match parent_type {
         Type::Int => {
@@ -467,10 +468,10 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
     Ok(())
 }
 
-fn type_name<'a>(type_: &'a Type) -> Result<&'a str, TypeError> {
+fn type_name<'a>(type_: &'a Type) -> &'a str {
     match type_ {
-        Type::Int => Err(TypeError { message: String::from("ERROR: No type name for integer") }),
-        Type::Struct(name) => Ok(name),
+        Type::Int => "int",
+        Type::Struct(name) => name,
     }
 }
 
