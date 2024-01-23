@@ -65,6 +65,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                     return Err(TypeError { message: format!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_) });
                 }
                 Some(TypeInfo::Struct(.., methods)) => {
+                    // method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
                         return Err(TypeError { message: format!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_) });
                     }
@@ -236,7 +237,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             let expression_type = check_expression(expression, context, types)?;
 
             // typeinfo for the body expression
-            let type_info = types.get(type_name(&expression_type)?).expect("Expression can't evaluate to an unknown type");
+            let type_info = types.get(type_name(&expression_type)?).expect("ERROR: Expression can't evaluate to an unknown type");
 
             match type_info {
                 TypeInfo::Struct(.., methods) => {
