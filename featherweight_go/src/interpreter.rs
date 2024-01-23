@@ -32,11 +32,6 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                         TypeInfo::Struct(_, methods) => {
                             let method_declaration = methods.get(method).expect("Type should implement this method");
 
-                            // check for recursive method call
-                            if is_recursive_methodcall(&method_declaration.body) {
-                                return Err(EvalError { message: format!("ERROR: Body of method {:?} contains a recursive method call", method_declaration.specification.name) });
-                            }
-
                             let mut local_context = HashMap::new();
 
                             local_context.insert(method_declaration.receiver.name, Value::Struct(method_declaration.receiver.type_, values));
@@ -130,9 +125,4 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
             }
         }
     }
-}
-
-fn is_recursive_methodcall(expression: &Expression) -> bool {
-    eprintln!("{:#?}", expression);
-    false
 }
