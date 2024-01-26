@@ -3,7 +3,9 @@ extern crate logos;
 use std::fs::read_to_string;
 use logos::Logos;
 use parser::language::parse;
+use parser::Program;
 use token::{LexerError, Token};
+use type_checker::build_type_infos;
 
 mod token;
 mod parser;
@@ -33,9 +35,18 @@ fn lex_source(source: String) {
 
 fn parse_tokens(tokens: &[Token]) {
     match parse(tokens) {
-        Ok(program) => println!("Current program {:#?}", program),
+        Ok(program) => create_type_infos(&program),
         Err(parser_error) => {
             eprintln!("Parsing failed with the following error: {parser_error}")
+        }
+    }
+}
+
+fn create_type_infos(program: &Program) {
+    match build_type_infos(program) {
+        Ok(type_infos) => println!("Typeinfos: {:#?}", type_infos),
+        Err(type_info_error) => {
+            eprintln!("Creating the type infos failed with the following error: {:?}", type_info_error.message);
         }
     }
 }
