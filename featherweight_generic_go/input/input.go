@@ -1,11 +1,9 @@
 package main;
 
-type Any(type) struct {}
+type Container(type) interface {}
 
-type client(type a Any, b Any) struct {
-
-}
+type Consumer(type T Client(T)) struct {}
 
 func main() {
-    _ = 1 + 1
+    _ = 1
 }
