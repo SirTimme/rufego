@@ -11,34 +11,32 @@ peg::parser!(
             }
 
         rule declaration() -> Declaration<'a>
-            = [Function] [LeftParenthesis] receiver:binding_string() receiver_bound:bound() [RightParenthesis] [Identifier(name)] func_bound:bound() [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
-                Declaration::Method(MethodDeclaration { receiver, bound: receiver_bound, specification: MethodSpecification { name, bound: func_bound, parameters, return_type }, body })
-            }
-            / [Type] [Identifier(name)] bound:bound() literal:type_literal() {
-                Declaration::Type { name, bound, literal }
+            = [Type] [Identifier(name)] [LeftParenthesis] bound:formal_type() [RightParenthesis] literal:type_literal() { Declaration::Type { name, bound, literal } }
+            / [Function] [LeftParenthesis] receiver:generic_receiver() [LeftParenthesis] bound:formal_type() [RightParenthesis] [RightParenthesis] specification:method_specification() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
+                Declaration::Method(MethodDeclaration { receiver, bound, specification, body })
             }
 
         rule type_literal() -> TypeLiteral<'a>
-            = [Struct] [LeftCurlyBrace] fields:binding_type()* [RightCurlyBrace] { TypeLiteral::Struct { fields } }
-            / [Interface] [LeftCurlyBrace] methods:method_body()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
+            = [Struct] [LeftCurlyBrace] fields:generic_binding()* [RightCurlyBrace] { TypeLiteral::Struct { fields } }
+            / [Interface] [LeftCurlyBrace] methods:method_specification()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
 
-        rule bound() -> Vec<Binding<'a, TypeEnum<'a>>>
-            = [LeftParenthesis] [Type] generic_parameters:binding_type()* [RightParenthesis] { generic_parameters }
-
-        rule binding_string() -> Binding<'a, &'a str>
-            = [Identifier(name)] [Identifier(type_)] [Comma]? {
-                Binding { name, type_ }
-            }
-
-        rule binding_type() -> Binding<'a, TypeEnum<'a>>
-            = [Identifier(name)] type_:type_() [Comma]? {
-                Binding { name, type_ }
-            }
-
-        rule method_body() -> MethodSpecification<'a>
-            = [Identifier(name)] bound:bound() [LeftParenthesis] parameters:binding_type()* [RightParenthesis] return_type:type_() {
+        rule method_specification() -> MethodSpecification<'a>
+            = [Identifier(name)] [LeftParenthesis] bound:formal_type() [RightParenthesis] [LeftParenthesis] parameters:generic_binding()* [RightParenthesis] return_type:generic_type() {
                 MethodSpecification { name, bound, parameters, return_type }
             }
+
+        rule formal_type() -> Vec<GenericBinding<'a>>
+            = [Type] generic_params:generic_binding()* { generic_params }
+
+        rule generic_binding() -> GenericBinding<'a>
+            = [Identifier(name)] type_:generic_type() { GenericBinding { name, type_ } }
+
+        rule generic_type() -> GenericType<'a>
+            = [Identifier(name)] [LeftParenthesis] values:generic_type()* [RightParenthesis] { GenericType::NamedType(name, values) }
+            / [Identifier(name)] { GenericType::TypeParameter(name) }
+
+        rule generic_receiver() -> GenericReceiver<'a>
+            = [Identifier(receiver_var)] [Identifier(receiver_type)] [LeftParenthesis] generic_params:formal_type() [RightParenthesis] { GenericReceiver { name: receiver_var, type_: receiver_type, instantiation: generic_params } }
 
         rule type_() -> TypeEnum<'a>
             = [Int] { TypeEnum::Int }
@@ -54,18 +52,18 @@ peg::parser!(
                 lhs: Box::new(lhs), operator: Operator::Mul, rhs: Box::new(rhs) }
             }
             --
-            expression:(@) [Dot] [LeftParenthesis] assert:type_() [RightParenthesis] {
+            expression:(@) [Dot] [LeftParenthesis] assert:generic_type() [RightParenthesis] {
                 Expression::TypeAssertion { expression: Box::new(expression), assert }
             }
-            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
-                Expression::MethodCall { expression: Box::new(expression), method, parameter_expressions }
+            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] bound:(generic_type() ** [Comma]) [RightParenthesis] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
+                Expression::MethodCall { expression: Box::new(expression), method, bound, parameter_expressions }
             }
             expression:(@) [Dot] [Identifier(field)] {
                 Expression::Select { expression: Box::new(expression), field }
             }
             --
-            [Identifier(name)] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
-                Expression::StructLiteral { name, field_expressions }
+            [Identifier(name)] [LeftParenthesis] bound:(generic_type() ** [Comma]) [RightParenthesis] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
+                Expression::StructLiteral { name, bound, field_expressions }
             }
             [Identifier(name)] {
                 Expression::Variable { name }
@@ -83,41 +81,54 @@ peg::parser!(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Program<'a> {
     pub(crate) declarations: Vec<Declaration<'a>>,
-    pub(crate) expression: Box<Expression<'a>>
+    pub(crate) expression: Box<Expression<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Declaration<'a> {
     Type {
         name: &'a str,
-        bound: Vec<Binding<'a, TypeEnum<'a>>>,
-        literal: TypeLiteral<'a>
+        bound: Vec<GenericBinding<'a>>,
+        literal: TypeLiteral<'a>,
     },
-    Method(MethodDeclaration<'a>)
+    Method(MethodDeclaration<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MethodDeclaration<'a> {
-    pub(crate) receiver: Binding<'a, &'a str>,
-    pub(crate) bound: Vec<Binding<'a, TypeEnum<'a>>>,
+    pub(crate) receiver: GenericReceiver<'a>,
+    pub(crate) bound: Vec<GenericBinding<'a>>,
     pub(crate) specification: MethodSpecification<'a>,
-    pub(crate) body: Expression<'a>
+    pub(crate) body: Expression<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TypeLiteral<'a> {
     Struct {
-        fields: Vec<Binding<'a, TypeEnum<'a>>>
+        fields: Vec<GenericBinding<'a>>
     },
     Interface {
         methods: Vec<MethodSpecification<'a>>
-    }
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Binding<'a, T> {
-    pub(crate) name: &'a str,
-    pub(crate) type_: T,
+pub(crate) enum GenericType<'a> {
+    TypeParameter(&'a str),
+    NamedType(&'a str, Vec<GenericType<'a>>),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GenericBinding<'a> {
+    name: &'a str,
+    type_: GenericType<'a>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct GenericReceiver<'a> {
+    name: &'a str,
+    type_: &'a str,
+    instantiation: Vec<GenericBinding<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,19 +139,21 @@ pub(crate) enum Expression<'a> {
     MethodCall {
         expression: Box<Expression<'a>>,
         method: &'a str,
-        parameter_expressions: Vec<Expression<'a>>
+        bound: Vec<GenericType<'a>>,
+        parameter_expressions: Vec<Expression<'a>>,
     },
     StructLiteral {
         name: &'a str,
-        field_expressions: Vec<Expression<'a>>
+        bound: Vec<GenericType<'a>>,
+        field_expressions: Vec<Expression<'a>>,
     },
     Select {
         expression: Box<Expression<'a>>,
-        field: &'a str
+        field: &'a str,
     },
     TypeAssertion {
         expression: Box<Expression<'a>>,
-        assert: TypeEnum<'a>
+        assert: GenericType<'a>,
     },
     Number {
         value: i64
@@ -148,16 +161,16 @@ pub(crate) enum Expression<'a> {
     BinOp {
         lhs: Box<Expression<'a>>,
         operator: Operator,
-        rhs: Box<Expression<'a>>
-    }
+        rhs: Box<Expression<'a>>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MethodSpecification<'a> {
     pub(crate) name: &'a str,
-    pub(crate) bound: Vec<Binding<'a, TypeEnum<'a>>>,
-    pub(crate) parameters: Vec<Binding<'a, TypeEnum<'a>>>,
-    pub(crate) return_type: TypeEnum<'a>
+    pub(crate) bound: Vec<GenericBinding<'a>>,
+    pub(crate) parameters: Vec<GenericBinding<'a>>,
+    pub(crate) return_type: GenericType<'a>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
