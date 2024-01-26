@@ -12,8 +12,8 @@ peg::parser!(
 
         rule declaration() -> Declaration<'a>
             = [Type] [Identifier(name)] [LeftParenthesis] bound:formal_type() [RightParenthesis] literal:type_literal() { Declaration::Type { name, bound, literal } }
-            / [Function] [LeftParenthesis] receiver:generic_receiver() [LeftParenthesis] bound:formal_type() [RightParenthesis] [RightParenthesis] specification:method_specification() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
-                Declaration::Method(MethodDeclaration { receiver, bound, specification, body })
+            / [Function] [LeftParenthesis] receiver:generic_receiver() [RightParenthesis] specification:method_specification() [LeftCurlyBrace] [Return] body:expression() [RightCurlyBrace] {
+                Declaration::Method(MethodDeclaration { receiver, specification, body })
             }
 
         rule type_literal() -> TypeLiteral<'a>
@@ -21,18 +21,19 @@ peg::parser!(
             / [Interface] [LeftCurlyBrace] methods:method_specification()* [RightCurlyBrace] { TypeLiteral::Interface { methods } }
 
         rule method_specification() -> MethodSpecification<'a>
-            = [Identifier(name)] [LeftParenthesis] bound:formal_type() [RightParenthesis] [LeftParenthesis] parameters:generic_binding()* [RightParenthesis] return_type:generic_type() {
+            = [Identifier(name)] [LeftParenthesis] bound:formal_type() [RightParenthesis] [LeftParenthesis] parameters:(generic_binding() ** [Comma]) [RightParenthesis] return_type:generic_type() {
                 MethodSpecification { name, bound, parameters, return_type }
             }
 
         rule formal_type() -> Vec<GenericBinding<'a>>
-            = [Type] generic_params:generic_binding()* { generic_params }
+            = [Type] generic_params:(generic_binding() ** [Comma]) { generic_params }
 
         rule generic_binding() -> GenericBinding<'a>
             = [Identifier(name)] type_:generic_type() { GenericBinding { name, type_ } }
 
         rule generic_type() -> GenericType<'a>
             = [Identifier(name)] [LeftParenthesis] values:generic_type()* [RightParenthesis] { GenericType::NamedType(name, values) }
+            / [Int] { GenericType::NumberType }
             / [Identifier(name)] { GenericType::TypeParameter(name) }
 
         rule generic_receiver() -> GenericReceiver<'a>
@@ -97,7 +98,6 @@ pub(crate) enum Declaration<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MethodDeclaration<'a> {
     pub(crate) receiver: GenericReceiver<'a>,
-    pub(crate) bound: Vec<GenericBinding<'a>>,
     pub(crate) specification: MethodSpecification<'a>,
     pub(crate) body: Expression<'a>,
 }
@@ -116,6 +116,7 @@ pub(crate) enum TypeLiteral<'a> {
 pub(crate) enum GenericType<'a> {
     TypeParameter(&'a str),
     NamedType(&'a str, Vec<GenericType<'a>>),
+    NumberType,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,9 +127,9 @@ pub(crate) struct GenericBinding<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GenericReceiver<'a> {
-    name: &'a str,
-    type_: &'a str,
-    instantiation: Vec<GenericBinding<'a>>,
+    pub(crate) name: &'a str,
+    pub(crate) type_: &'a str,
+    pub(crate) instantiation: Vec<GenericBinding<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
