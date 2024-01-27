@@ -32,7 +32,7 @@ peg::parser!(
             = [Identifier(name)] type_:generic_type() { GenericBinding { name, type_ } }
 
         rule generic_type() -> GenericType<'a>
-            = [Identifier(name)] [LeftParenthesis] values:generic_type()* [RightParenthesis] { GenericType::NamedType(name, values) }
+            = [Identifier(name)] [LeftParenthesis] values:(generic_type() ** [Comma]) [RightParenthesis] { GenericType::NamedType(name, values) }
             / [Int] { GenericType::NumberType }
             / [Identifier(name)] { GenericType::TypeParameter(name) }
 
@@ -121,8 +121,8 @@ pub(crate) enum GenericType<'a> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GenericBinding<'a> {
-    name: &'a str,
-    type_: GenericType<'a>,
+    pub(crate) name: &'a str,
+    pub(crate) type_: GenericType<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
