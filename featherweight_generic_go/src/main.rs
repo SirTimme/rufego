@@ -1,11 +1,12 @@
 extern crate logos;
 
+use std::collections::HashMap;
 use std::fs::read_to_string;
 use logos::Logos;
 use parser::language::parse;
 use parser::Program;
 use token::{LexerError, Token};
-use type_checker::build_type_infos;
+use type_checker::{build_type_infos, check_program, TypeInfo};
 
 mod token;
 mod parser;
@@ -44,9 +45,18 @@ fn parse_tokens(tokens: &[Token]) {
 
 fn create_type_infos(program: &Program) {
     match build_type_infos(program) {
-        Ok(type_infos) => println!("Typeinfos: {:#?}", type_infos),
+        Ok(type_infos) => typecheck_program(program, &type_infos),
         Err(type_info_error) => {
             eprintln!("Creating the type infos failed with the following error: {:?}", type_info_error.message);
+        }
+    }
+}
+
+fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
+    match check_program(program, type_infos) {
+        Ok(_) => {},
+        Err(type_error) => {
+            eprintln!("Typechecking failed with the following error: {:?}", type_error.message);
         }
     }
 }
