@@ -1,12 +1,6 @@
 use std::collections::{HashMap};
 use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
-// TODO ok to use String for error messages?
-// TODO int subtype of anything?
-// TODO assert for int?
-// TODO Struct Self recursion: stage type checking or evaluating? (argument evaluating: precondistions for well formed sind erfüllt)
-// TODO cycle detection...
-
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum Type<'a> {
     Int,
