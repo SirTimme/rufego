@@ -54,7 +54,7 @@ fn create_type_infos(program: &Program) {
 
 fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
-        Ok(_) => {},
+        Ok(type_) => println!("Main expression has type '{:?}'", type_),
         Err(type_error) => {
             eprintln!("Typechecking failed with the following error: {:?}", type_error.message);
         }
