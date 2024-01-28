@@ -1,7 +1,7 @@
 use std::collections::{HashMap};
-use parser::{Declaration, Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
+use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
-// TODO clone() loswerden
+// clone() loswerden
 // TODO ok to use String here for errormessages?
 // TODO Self recursion in struct
 // TODO assert for int?
@@ -84,16 +84,14 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
         - all method declarations are distinct
         - body well formed in the empty context
  */
-pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, TypeError> {
+pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<GenericType<'a>, TypeError> {
     // are the declarations well formed?
     for declaration in &program.declarations {
         check_declaration(declaration, types)?;
     }
 
-    Ok(Type::Int)
-
     // is the body well formed in the empty context?
-    // check_expression(&program.expression, &HashMap::new(), types)
+    check_expression(&program.expression, &HashMap::new(), types)
 }
 
 /*
@@ -108,13 +106,72 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a st
  */
 fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     match declaration {
-        Declaration::Type { name, bound, literal } => {
-            check_type_literal(name, bound, literal, types)?;
-        }
-        Declaration::Method(MethodDeclaration { .. }) => {
+        Declaration::Type { name, bound, literal } => check_type_literal(name, bound, literal, types)?,
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
+    }
 
+    Ok(())
+}
+
+fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
+    // create environment
+    let mut environment = HashMap::new();
+
+    // keep track of bound types
+    let mut instantiated_types= Vec::new();
+
+    for binding in &receiver.instantiation {
+        // only interface types are allowed
+        let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
+
+        match type_info {
+            TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface(_, _) => {
+                environment.insert(binding.name, &binding.type_);
+            }
+        }
+
+        instantiated_types.push(binding.type_.clone());
+    }
+
+    // create receiver type
+    let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
+
+    // receiver type declared?
+    check_type(&receiver_type, &environment, types)?;
+
+    // all types of instantiation declared?
+    for binding in &receiver.instantiation {
+        check_type(&binding.type_, &environment, types)?;
+    }
+
+    for (index, parameter) in specification.parameters.iter().enumerate() {
+        // is the parameter type declared?
+        check_type(&parameter.type_, &environment, types)?;
+
+        // are the parameter names distinct?
+        if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
+            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
         }
     }
+
+    // is the return-type declared?
+    check_type(&specification.return_type, &environment, types)?;
+
+    // build type context
+    let mut context = HashMap::new();
+
+    context.insert(receiver.name, receiver_type);
+
+    for parameter in &specification.parameters {
+        context.insert(parameter.name, parameter.type_.clone());
+    }
+
+    // evaluate type of body expression
+    let expression_type = check_expression(body, &context, types)?;
+
+    // is the body type at least a subtype of the return type?
+    is_subtype_of(&expression_type, &specification.return_type, &environment, types)?;
 
     Ok(())
 }
@@ -129,18 +186,29 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str,
             - all method names are unique
  */
 fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+    // create environment
+    let mut environment = HashMap::new();
+
+    for binding in bound {
+        // type in bound declared?
+        check_type(&binding.type_, &HashMap::new(), types)?;
+
+        // only interface types are allowed
+        let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
+
+        match type_info {
+            TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface(_, _) => {
+                environment.insert(binding.name, &binding.type_);
+            }
+        }
+    }
+
     match type_literal {
         TypeLiteral::Struct { fields } => {
-            // create environment
-            let mut context = HashMap::new();
-
-            for binding in bound {
-                context.insert(binding.name, &binding.type_);
-            }
-
             for (index, field) in fields.iter().enumerate() {
                 // field type declared?
-                check_type(&field.type_, &context, types)?;
+                check_type(&field.type_, &environment, types)?;
 
                 // are the field names distinct?
                 if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
@@ -148,8 +216,16 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
                 }
             }
         }
-        TypeLiteral::Interface { .. } => {
+        TypeLiteral::Interface { methods } => {
+            for (index, method_specification) in methods.iter().enumerate() {
+                // is the method specification well formed?
+                check_method_specification(method_specification, &environment, types)?;
 
+                // are the method names unique?
+                if methods.iter().skip(index + 1).any(|element| element.name == method_specification.name) {
+                    return Err(TypeError { message: format!("ERROR: Duplicate interface method '{}' for interface '{name}'", method_specification.name) });
+                }
+            }
         }
     }
 
@@ -161,8 +237,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         - all formal parameters x are distinct
         - all the types t are declared
  */
-fn check_method_specification<'a>(method_specification: &MethodSpecification, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-
+fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     Ok(())
 }
 
@@ -171,13 +246,13 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, ty
         - all type parameters in it must be declared
         - all named types must be instantiated with type arguments
 */
-fn check_type<'a>(type_: &GenericType<'a>, context: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     // T => generic parameter
     // Consumer(int) / Consumer(Client()) / Consumer(T) => named type ??
 
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
-            if !context.contains_key(type_parameter) {
+            if !environment.contains_key(type_parameter) {
                 return Err(TypeError { message: format!("ERROR: Usage of unknown generic parameter {}", type_parameter) });
             }
         }
@@ -188,11 +263,11 @@ fn check_type<'a>(type_: &GenericType<'a>, context: &HashMap<&'a str, &GenericTy
 
             for parameter in instantiation {
                 // type declared?
-                check_type(parameter, context, types)?;
+                check_type(parameter, environment, types)?;
             }
 
             // bounds satisfied?
-            check_type_bound(name, instantiation, context, types)?;
+            check_type_bound(name, instantiation, environment, types)?;
         }
         GenericType::NumberType => ()
     }
@@ -200,25 +275,31 @@ fn check_type<'a>(type_: &GenericType<'a>, context: &HashMap<&'a str, &GenericTy
     Ok(())
 }
 
-fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, context: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-    let type_info = types.get(type_).expect("Occurence of type was checked beforehand");
+fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+    let type_info = types.get(type_).expect("Occurrence of type was checked beforehand");
 
     match type_info {
         TypeInfo::Struct(bound, ..) => {
             // correct amount of generic parameters supplied?
             if bound.len() != instantiation.len() {
-                return Err(TypeError { message: format!("ERROR: Type {} has {} generic parameters but {} parameters were supplied", type_, bound.len(), instantiation.len()) });
+                return Err(TypeError { message: format!("ERROR: Type '{type_}' has {} generic parameters but {} parameters were supplied", bound.len(), instantiation.len()) });
             }
 
-            for parameter in bound.iter() {
+            for (index, parameter) in bound.iter().enumerate() {
                 match &parameter.type_ {
                     GenericType::TypeParameter(type_parameter) => {
-                        if !context.contains_key(type_parameter) {
-                            return Err(TypeError { message: format!("ERROR: Usage of unknown generic parameter {}", type_parameter) });
+                        if !environment.contains_key(type_parameter) {
+                            return Err(TypeError { message: format!("ERROR: Usage of unknown generic parameter '{type_parameter}'") });
                         }
                     }
                     GenericType::NamedType(nested_type, nested_instantiation) => {
-                        check_type_bound(nested_type, nested_instantiation, context, types)?;
+                        let instantiated_type = instantiation.get(index).expect("Vectors are of the same length");
+
+                        // check if instantiated type is at least subtype of corresponding type
+                        is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
+
+                        // check nested parameter
+                        check_type_bound(nested_type, nested_instantiation, environment, types)?;
                     }
                     GenericType::NumberType => ()
                 }
@@ -230,22 +311,71 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, co
     Ok(())
 }
 
-fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, TypeError> {
+fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<GenericType<'a>, TypeError> {
     match expression {
-        Expression::Variable { .. } => {}
-        Expression::MethodCall { .. } => {}
-        Expression::StructLiteral { .. } => {}
-        Expression::Select { .. } => {}
-        Expression::TypeAssertion { .. } => {}
-        Expression::Number { .. } => {}
-        Expression::BinOp { .. } => {}
-    }
+        Expression::Variable { name } => {
+            // variable known in this context?
+            if let Some(var_type) = environment.get(name) {
+                Ok(var_type.clone())
+            } else {
+                Err(TypeError { message: format!("ERROR: Variable '{name}' is unknown in this context") })
+            }
+        }
+        Expression::MethodCall { .. } => {
+            todo!()
+        }
+        Expression::StructLiteral { .. } => {
+            todo!()
+        }
+        Expression::Select { .. } => {
+            todo!()
+        }
+        Expression::TypeAssertion { .. } => {
+            todo!()
+        }
+        Expression::Number { .. } => {
+            Ok(GenericType::NumberType)
+        }
+        Expression::BinOp { lhs, rhs, .. } => {
+            let lhs_type = check_expression(lhs, environment, types)?;
+            let rhs_type = check_expression(rhs, environment, types)?;
 
-    todo!()
+            match (lhs_type, rhs_type) {
+                (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
+                (_, GenericType::NumberType) => {
+                    Err(TypeError { message: String::from("ERROR: Left operand of a binary operation doesn't evaluate to an integer type") })
+                }
+                (GenericType::NumberType, _) => {
+                    Err(TypeError { message: String::from("ERROR: Right operand of a binary operation doesn't evaluate to an integer type") })
+                }
+                (_, _) => {
+                    Err(TypeError { message: String::from("ERROR: Both operands of a binary operation don't evaluate to an integer type") })
+                }
+            }
+        }
+    }
 }
 
-pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericType, context: &HashMap<&str, Type<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericType, environment: &HashMap<&str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+    // a type is a subtype of itself
+    if parent_type == child_type {
+        return Ok(());
+    }
+
+    if child_type == &GenericType::NumberType {
+        return Err(TypeError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
+    }
+
+    let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
 
     Ok(())
+}
+
+fn type_name<'a>(type_: &'a GenericType) -> &'a str {
+    match type_ {
+        GenericType::TypeParameter(type_parameter) => type_parameter,
+        GenericType::NamedType(name, _) => name,
+        GenericType::NumberType => "int",
+    }
 }
 
