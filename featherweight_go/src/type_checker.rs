@@ -101,42 +101,45 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a st
  */
 fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     match declaration {
-        Declaration::Type { name, literal } => {
-            // is the type literal well formed?
-            check_type_literal(name, literal, types)?;
-        }
-        Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
-            // is the receiver type declared?
-            check_type(&Type::Struct(receiver.type_), types)?;
+        // is the type literal well formed?
+        Declaration::Type { name, literal } => check_type_literal(name, literal, types)?,
+        // is the method well formed?
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
+    }
 
-            for (index, parameter) in specification.parameters.iter().enumerate() {
-                // is the parameter type declared?
-                check_type(&parameter.type_, types)?;
+    Ok(())
+}
 
-                // are the parameter names distinct?
-                if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-                    return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
-                }
-            }
+fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
+    // is the receiver type declared?
+    check_type(&Type::Struct(receiver.type_), types)?;
 
-            // is the return-type declared?
-            check_type(&specification.return_type, types)?;
+    for (index, parameter) in specification.parameters.iter().enumerate() {
+        // is the parameter type declared?
+        check_type(&parameter.type_, types)?;
 
-            // build type context
-            let mut context = HashMap::new();
-            context.insert(receiver.name, Type::Struct(receiver.type_));
-
-            for parameter in &specification.parameters {
-                context.insert(parameter.name, parameter.type_.clone());
-            }
-
-            // evaluate type of body expression
-            let expression_type = check_expression(body, &context, types)?;
-
-            // is the body type at least a subtype of the return type?
-            is_subtype_of(&expression_type, &specification.return_type, types)?;
+        // are the parameter names distinct?
+        if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
+            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
         }
     }
+
+    // is the return-type declared?
+    check_type(&specification.return_type, types)?;
+
+    // build type context
+    let mut context = HashMap::new();
+    context.insert(receiver.name, Type::Struct(receiver.type_));
+
+    for parameter in &specification.parameters {
+        context.insert(parameter.name, parameter.type_.clone());
+    }
+
+    // evaluate type of body expression
+    let expression_type = check_expression(body, &context, types)?;
+
+    // is the body type at least a subtype of the return type?
+    is_subtype_of(&expression_type, &specification.return_type, types)?;
 
     Ok(())
 }
@@ -215,7 +218,7 @@ fn check_type<'a>(type_: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Resul
         Type::Int => (),
         Type::Struct(name) => {
             if !types.contains_key(name) {
-                return Err(TypeError { message: format!("ERROR: Type {} is undeclared", name) });
+                return Err(TypeError { message: format!("ERROR: Type '{name}' is undeclared") });
             }
         }
     }
