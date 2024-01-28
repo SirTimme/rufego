@@ -74,12 +74,15 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                 Value::Struct(name, struct_values) => {
                     let type_info = types.get(name).expect("Value can only be a declared struct");
 
-                    if let TypeInfo::Struct(fields, _) = type_info {
-                        let field_index = fields.iter().position(|binding| &binding.name == field).expect("Field name should exists");
+                    match type_info {
+                        TypeInfo::Struct(fields, _) => {
+                            let field_index = fields.iter().position(|binding| &binding.name == field).expect("Field name should exists");
 
-                        Ok(struct_values.get(field_index).expect("Field should exists").clone())
-                    } else {
-                        Err(EvalError { message: String::from("Cant instantiate an interface literal") })
+                            Ok(struct_values.get(field_index).expect("Field should exists").clone())
+                        }
+                        TypeInfo::Interface(_) => {
+                            Err(EvalError { message: String::from("Cant instantiate an interface literal") })
+                        }
                     }
                 }
             }
