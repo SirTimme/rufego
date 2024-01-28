@@ -1,5 +1,4 @@
 use Token;
-use type_checker::Type as TypeEnum;
 
 peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {
@@ -38,10 +37,6 @@ peg::parser!(
 
         rule generic_receiver() -> GenericReceiver<'a>
             = [Identifier(receiver_var)] [Identifier(receiver_type)] [LeftParenthesis] generic_params:formal_type() [RightParenthesis] { GenericReceiver { name: receiver_var, type_: receiver_type, instantiation: generic_params } }
-
-        rule type_() -> TypeEnum<'a>
-            = [Int] { TypeEnum::Int }
-            / [Identifier(name)] { TypeEnum::Struct(name) }
 
         #[cache]
         rule expression() -> Expression<'a> = precedence!{
