@@ -11,12 +11,6 @@ use parser::{Declaration, Expression, GenericBinding, GenericType, MethodDeclara
 // TODO wegen Pascal fragen..
 
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub(crate) enum Type<'a> {
-    Int,
-    Struct(&'a str),
-}
-
-#[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
     // bound, fields, methods
     Struct(&'a Vec<GenericBinding<'a>>, &'a Vec<GenericBinding<'a>>, HashMap<&'a str, &'a MethodDeclaration<'a>>),
