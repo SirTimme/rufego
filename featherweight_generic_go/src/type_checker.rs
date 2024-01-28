@@ -238,6 +238,19 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         - all the types t are declared
  */
 fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+    for (index, parameter) in method_specification.parameters.iter().enumerate() {
+        // is the parameter type declared?
+        check_type(&parameter.type_, environment , types)?;
+
+        // are the method parameters distinct?
+        if method_specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
+            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} for method {:?}", parameter.name, method_specification.name) });
+        }
+    }
+
+    // is the return type declared?
+    check_type(&method_specification.return_type, environment , types)?;
+
     Ok(())
 }
 
