@@ -411,11 +411,15 @@ pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &H
         return Ok(());
     }
 
+    if child_type == &Type::Int {
+        return Err(TypeError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
+    }
+
     let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
 
     let methods = match parent_type {
         Type::Int => {
-            return Err(TypeError { message: String::from("ERROR: Integer cant be the supertype of any type") });
+            return Err(TypeError { message: String::from("ERROR: An integer value cant be the parent type of a struct value") });
         }
         Type::Struct(type_name) => {
             match types.get(type_name) {
