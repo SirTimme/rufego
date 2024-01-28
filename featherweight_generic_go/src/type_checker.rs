@@ -62,10 +62,10 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                 None => {
                     return Err(TypeError { message: format!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_) });
                 }
-                Some(TypeInfo::Interface(..)) => {
+                Some(TypeInfo::Interface(_, _)) => {
                     return Err(TypeError { message: format!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_) });
                 }
-                Some(TypeInfo::Struct(.., methods)) => {
+                Some(TypeInfo::Struct(_, _, methods)) => {
                     // method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
                         return Err(TypeError { message: format!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_) });
@@ -127,7 +127,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
         match type_info {
             TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
             TypeInfo::Interface(_, _) => {
-                environment.insert(binding.name, &binding.type_);
+                environment.insert(binding.name, binding.type_.clone());
             }
         }
 
@@ -199,7 +199,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         match type_info {
             TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
             TypeInfo::Interface(_, _) => {
-                environment.insert(binding.name, &binding.type_);
+                environment.insert(binding.name, binding.type_.clone());
             }
         }
     }
@@ -237,7 +237,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         - all formal parameters x are distinct
         - all the types t are declared
  */
-fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     Ok(())
 }
 
@@ -246,10 +246,10 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, en
         - all type parameters in it must be declared
         - all named types must be instantiated with type arguments
 */
-fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     // T => generic parameter
     // Consumer(int) / Consumer(Client()) / Consumer(T) => named type ??
-
+    // TODO correct instantiation of bounds..
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             if !environment.contains_key(type_parameter) {
@@ -275,7 +275,7 @@ fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, &Gener
     Ok(())
 }
 
-fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, environment: &HashMap<&'a str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     let type_info = types.get(type_).expect("Occurrence of type was checked beforehand");
 
     match type_info {
@@ -324,11 +324,63 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
         Expression::MethodCall { .. } => {
             todo!()
         }
-        Expression::StructLiteral { .. } => {
-            todo!()
+        Expression::StructLiteral { name, bound, field_expressions } => {
+            // TODO check for bound missing..
+            match types.get(name) {
+                None => {
+                    Err(TypeError { message: format!("ERROR: Struct literal {:?} is not declared", name) })
+                }
+                Some(type_info) => {
+                    match type_info {
+                        TypeInfo::Struct(_, fields, _) => {
+                            // correct amount of parameters supplied?
+                            if field_expressions.len() != fields.len() {
+                                return Err(TypeError { message: format!("ERROR: Struct {:?} has {:?} fields but {:?} values were supplied", name, fields.len(), field_expressions.len()) });
+                            }
+
+                            for (index, expression) in field_expressions.iter().enumerate() {
+                                if let Some(field) = fields.get(index) {
+                                    // evaluate type of supplied parameter
+                                    let field_type = check_expression(expression, environment, types)?;
+
+                                    is_subtype_of(&field_type, &field.type_, environment, types)?;
+                                }
+                            }
+
+                            Ok(GenericType::NamedType(name, Vec::new()))
+                        }
+                        TypeInfo::Interface(_, _) => {
+                            Err(TypeError { message: String::from("ERROR: An interface can't be instantiated") })
+                        }
+                    }
+                }
+            }
         }
-        Expression::Select { .. } => {
-            todo!()
+        Expression::Select { expression, field: field_var } => {
+            let type_name = match check_expression(expression, environment, types)? {
+                GenericType::NumberType => {
+                    return Err(TypeError { message: String::from("ERROR: Selections are only allowed on struct types") });
+                }
+                GenericType::TypeParameter(_) => {
+                    return Err(TypeError { message: String::from("ERROR: Expression of a structure literal evaluated to a type parameter") });
+                }
+                GenericType::NamedType(name, _) => name,
+            };
+
+            let type_info = types.get(type_name).expect("Expression can't evaluate to an unknown type");
+
+            match type_info {
+                TypeInfo::Struct(_, fields, _) => {
+                    if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
+                        Ok(field.type_.clone())
+                    } else {
+                        Err(TypeError { message: format!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var) })
+                    }
+                }
+                TypeInfo::Interface(_, _) => {
+                    Err(TypeError { message: String::from("ERROR: An interface can't be selected") })
+                }
+            }
         }
         Expression::TypeAssertion { .. } => {
             todo!()
@@ -356,7 +408,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
     }
 }
 
-pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericType, environment: &HashMap<&str, &GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericType, environment: &HashMap<&str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     // a type is a subtype of itself
     if parent_type == child_type {
         return Ok(());

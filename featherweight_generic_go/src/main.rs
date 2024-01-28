@@ -3,14 +3,16 @@ extern crate logos;
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use logos::Logos;
+use interpreter::{evaluate, Value};
 use parser::language::parse;
-use parser::Program;
+use parser::{Expression, Program};
 use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program, TypeInfo};
 
 mod token;
 mod parser;
 mod type_checker;
+mod interpreter;
 
 fn main() {
     read_input("featherweight_generic_go/input/input.go");
@@ -54,9 +56,20 @@ fn create_type_infos(program: &Program) {
 
 fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
-        Ok(type_) => println!("Main expression has type '{:?}'", type_),
+        Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
         Err(type_error) => {
             eprintln!("Typechecking failed with the following error: {:?}", type_error.message);
+        }
+    }
+}
+
+fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
+    match evaluate(expression, context, types) {
+        Ok(value) => {
+            println!("Program evaluates to {:?}", value);
+        }
+        Err(eval_error) => {
+            eprintln!("Evaluation of program failed with following error: {:?}", eval_error.message);
         }
     }
 }
