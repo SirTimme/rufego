@@ -131,21 +131,29 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str,
  */
 fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     // create type formal environment
-    let mut environment = HashMap::new();
+    let mut literal_environment = HashMap::new();
 
     // type formals well formed in the empty type environment?
     for binding in bound {
-        match types.get(type_name(&binding.type_)) {
+        let type_info = match types.get(type_name(&binding.type_)) {
+            Some(type_info) => type_info,
             None => {
-                return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
-            }
-            Some(type_info) => {
-                match type_info {
-                    TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
-                    TypeInfo::Interface { .. } => {
-                        environment.insert(binding.name, binding.type_.clone());
+                // if type is not found, check environment of type literal
+                match literal_environment.get(type_name(&binding.type_)) {
+                    Some(type_) => {
+                        types.get(type_name(type_)).expect("ERROR: A type was not present in the types HashMap!")
+                    }
+                    None => {
+                        return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
                     }
                 }
+            }
+        };
+
+        match type_info {
+            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface { .. } => {
+                literal_environment.insert(binding.name, binding.type_.clone());
             }
         }
     }
@@ -154,7 +162,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         TypeLiteral::Struct { fields } => {
             for (index, field) in fields.iter().enumerate() {
                 // field type declared?
-                check_type(&field.type_, &environment, types)?;
+                check_type(&field.type_, &literal_environment, types)?;
 
                 // are the field names distinct?
                 if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
@@ -165,7 +173,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         TypeLiteral::Interface { methods } => {
             for (index, method_specification) in methods.iter().enumerate() {
                 // is the method specification well formed?
-                check_method_specification(method_specification, &environment, types)?;
+                check_method_specification(method_specification, &literal_environment, types)?;
 
                 // are the method names unique?
                 if methods.iter().skip(index + 1).any(|element| element.name == method_specification.name) {
@@ -185,7 +193,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         - receiver type and parameter types are distinct
         - type of body expression is subtype of return type
  */
-fn check_method<'a>(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
+fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
     // keep track of bound types
     let mut instantiated_types = Vec::new();
 
@@ -221,13 +229,13 @@ fn check_method<'a>(receiver: &GenericReceiver, specification: &MethodSpecificat
         check_type(&binding.type_, &receiver_environment, types)?;
     }
 
-    // create environment for method type formals
-    let mut method_environment = HashMap::new();
-
     // are the type formals of the method distinct to the type formals of the receiver?
     if specification.bound.iter().any(|element| receiver_environment.get(element.name).is_some()) {
         return Err(TypeError { message: format!("ERROR: Duplicate type formal in method '{}'", specification.name) });
     }
+
+    // create environment for method type formals
+    let mut method_environment = HashMap::new();
 
     for binding in &specification.bound {
         // Ψ is well formed under Φ ?
@@ -292,22 +300,67 @@ fn check_method<'a>(receiver: &GenericReceiver, specification: &MethodSpecificat
 
 /*
     Judgement S ok => method specification S is well formed
-        - all formal parameters x are distinct
-        - all the types t are well formed
+        - Φ is well formed under the empty type environment
+        - Ψ is well formed under Φ
+        - method parameter are distinct
+        - method parameter are well formed under Δ
+        - return type is well formed under Δ
  */
-fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-    for (index, parameter) in method_specification.parameters.iter().enumerate() {
-        // is the parameter type well formed?
-        check_type(&parameter.type_, environment, types)?;
+fn check_method_specification<'a>(specification: &MethodSpecification, type_literal_environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+    // are the type formals of the method distinct to the type formals of the type literal?
+    if specification.bound.iter().any(|element| type_literal_environment.get(element.name).is_some()) {
+        return Err(TypeError { message: format!("ERROR: Duplicate type parameter in method '{}'", specification.name) });
+    }
 
-        // are the method parameters distinct?
-        if method_specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} for method {:?}", parameter.name, method_specification.name) });
+    // create environment for method type formals
+    let mut method_environment = HashMap::new();
+
+    for binding in &specification.bound {
+        // Ψ is well formed under Φ ?
+        check_type(&binding.type_, &type_literal_environment, types)?;
+
+        let type_info = match types.get(type_name(&binding.type_)) {
+            Some(type_info) => type_info,
+            None => {
+                // if type is not found, check environment of receiver
+                match type_literal_environment.get(type_name(&binding.type_)) {
+                    Some(type_) => {
+                        types.get(type_name(type_)).expect("ERROR: A type was not present in the types HashMap!")
+                    }
+                    None => {
+                        return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
+                    }
+                }
+            }
+        };
+
+        match type_info {
+            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface { .. } => {
+                method_environment.insert(binding.name, binding.type_.clone());
+            }
+        }
+    }
+
+    // concatenate both type environments
+    for (key, value) in type_literal_environment.iter() {
+        method_environment.insert(key, value.clone());
+    }
+
+    let environment = method_environment;
+
+    for (index, parameter) in specification.parameters.iter().enumerate() {
+        // is the parameter type well formed?
+        check_type(&parameter.type_, &environment, types)?;
+
+        // are the parameter names distinct?
+        if specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
+            return Err(TypeError { message: format!("ERROR: Duplicate parameter name '{}' for method '{}'", parameter.name, specification.name) });
         }
     }
 
     // is the return type well formed?
-    check_type(&method_specification.return_type, environment, types)?;
+    check_type(&specification.return_type, &environment, types)?;
 
     Ok(())
 }

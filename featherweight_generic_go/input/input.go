@@ -1,10 +1,13 @@
 package main;
 
-type Container(type T Client(int)) interface {}
+type Container(type T Client()) interface {}
 
-type Client(type) interface {}
+type Client(type V Client()) interface {
+    build(type R V)(a R, b V) int
+    destroy(type R V)() int
+}
 
-type Box(type) struct {
+type Box(type V Client, R V) struct {
     value int
     b int
     c int
@@ -15,7 +18,7 @@ type Consumer(type T Container(Client(int))) struct {
     b T
 }
 
-func (this Consumer(type T Client(int))) build(type V T)(client T) V {
+func (this Consumer(type T Client())) build(type V T)(client T) V {
     return client
 }
 
