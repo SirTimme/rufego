@@ -9,6 +9,7 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO formal/actual typing? (currently only formal)
 // TODO typecontexts already in FG used
 // TODO wegen Pascal fragen..
+// TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
@@ -102,7 +103,8 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a st
 /*
     Judgement D ok => declaration D is well formed
         Type literal:
-            - its type literal is well formed
+            - type formals must be well formed in the empty type environment
+            - its type literal is well formed in the environment given by the type formals
         Method:
             - its receiver and formal parameters are distinct
             - all types are declared
@@ -118,71 +120,8 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str,
     Ok(())
 }
 
-fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
-    // create environment
-    let mut environment = HashMap::new();
-
-    // keep track of bound types
-    let mut instantiated_types = Vec::new();
-
-    for binding in &receiver.instantiation {
-        // only interface types are allowed
-        let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
-
-        match type_info {
-            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
-            TypeInfo::Interface { .. } => {
-                environment.insert(binding.name, binding.type_.clone());
-            }
-        }
-
-        instantiated_types.push(binding.type_.clone());
-    }
-
-    // create receiver type
-    let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
-
-    // receiver type declared?
-    check_type(&receiver_type, &environment, types)?;
-
-    // all types of instantiation declared?
-    for binding in &receiver.instantiation {
-        check_type(&binding.type_, &environment, types)?;
-    }
-
-    for (index, parameter) in specification.parameters.iter().enumerate() {
-        // is the parameter type declared?
-        check_type(&parameter.type_, &environment, types)?;
-
-        // are the parameter names distinct?
-        if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
-        }
-    }
-
-    // is the return-type declared?
-    check_type(&specification.return_type, &environment, types)?;
-
-    // build type context
-    let mut context = HashMap::new();
-
-    context.insert(receiver.name, receiver_type);
-
-    for parameter in &specification.parameters {
-        context.insert(parameter.name, parameter.type_.clone());
-    }
-
-    // evaluate type of body expression
-    let expression_type = check_expression(body, &context, types)?;
-
-    // is the body type at least a subtype of the return type?
-    is_subtype_of(&expression_type, &specification.return_type, &environment, types)?;
-
-    Ok(())
-}
-
 /*
-    Judgement T ok => type literal T is well formed
+    Judgement T ok => type literal T is well formed under the type formals
         Structure:
             - all field names are distinct
             - all types declared
@@ -191,20 +130,22 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
             - all method names are unique
  */
 fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-    // create environment
+    // create type formal environment
     let mut environment = HashMap::new();
 
+    // type formals well formed in the empty type environment?
     for binding in bound {
-        // type in bound declared?
-        check_type(&binding.type_, &HashMap::new(), types)?;
-
-        // only interface types are allowed
-        let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
-
-        match type_info {
-            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
-            TypeInfo::Interface { .. } => {
-                environment.insert(binding.name, binding.type_.clone());
+        match types.get(type_name(&binding.type_)) {
+            None => {
+                return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
+            }
+            Some(type_info) => {
+                match type_info {
+                    TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+                    TypeInfo::Interface { .. } => {
+                        environment.insert(binding.name, binding.type_.clone());
+                    }
+                }
             }
         }
     }
@@ -238,13 +179,127 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
 }
 
 /*
+    Judgement Φ; Ψ ok => method declaration is well formed
+        - Φ is well formed under the empty type environment
+        - Ψ is well formed under Φ
+        - receiver type and parameter types are distinct
+        - type of body expression is subtype of return type
+ */
+fn check_method<'a>(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
+    // keep track of bound types
+    let mut instantiated_types = Vec::new();
+
+    // create type formal environment
+    let mut receiver_environment = HashMap::new();
+
+    // type formals well formed in the empty type environment?
+    for binding in &receiver.instantiation {
+        match types.get(type_name(&binding.type_)) {
+            None => {
+                return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
+            }
+            Some(type_info) => {
+                match type_info {
+                    TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+                    TypeInfo::Interface { .. } => {
+                        receiver_environment.insert(binding.name, binding.type_.clone());
+                    }
+                }
+            }
+        }
+
+        instantiated_types.push(binding.type_.clone());
+    }
+
+    // create receiver type
+    let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
+
+    // receiver type well formed under the receiver type environment?
+    check_type(&receiver_type, &receiver_environment, types)?;
+
+    for binding in &receiver.instantiation {
+        check_type(&binding.type_, &receiver_environment, types)?;
+    }
+
+    // create environment for method type formals
+    let mut method_environment = HashMap::new();
+
+    // are the type formals of the method distinct to the type formals of the receiver?
+    if specification.bound.iter().any(|element| receiver_environment.get(element.name).is_some()) {
+        return Err(TypeError { message: format!("ERROR: Duplicate type formal in method '{}'", specification.name) });
+    }
+
+    for binding in &specification.bound {
+        println!("Type of parameter is {:#?}", binding.type_);
+
+        // Ψ is well formed under Φ ?
+        check_type(&binding.type_, &receiver_environment, types)?;
+
+        let type_info = match types.get(type_name(&binding.type_)) {
+            None => {
+                // if type is not found, check environment of receiver
+                match receiver_environment.get(type_name(&binding.type_)) {
+                    None => {
+                        return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
+                    }
+                    Some(type_) => {
+                        types.get(type_name(type_)).expect("Type should be present in types")
+                    }
+                }
+            }
+            Some(type_info) => type_info,
+        };
+
+        match type_info {
+            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface { .. } => {
+                method_environment.insert(binding.name, binding.type_.clone());
+            }
+        }
+    }
+
+    // concatenate both type environments
+    let environment = method_environment.into_iter().chain(receiver_environment).collect();
+
+    for (index, parameter) in specification.parameters.iter().enumerate() {
+        // parameter type well formed?
+        check_type(&parameter.type_, &environment, types)?;
+
+        // are the parameter names distinct?
+        if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
+            return Err(TypeError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
+        }
+    }
+
+    // return-type well formed?
+    check_type(&specification.return_type, &environment, types)?;
+
+    // build type context
+    let mut context = HashMap::new();
+
+    context.insert(receiver.name, receiver_type);
+
+    for parameter in &specification.parameters {
+        context.insert(parameter.name, parameter.type_.clone());
+    }
+
+    // evaluate type of body expression
+    let expression_type = check_expression(body, &context, types)?;
+
+    // is the body type a subtype of the return type?
+    is_subtype_of(&expression_type, &specification.return_type, &environment, types)?;
+
+    Ok(())
+}
+
+/*
     Judgement S ok => method specification S is well formed
         - all formal parameters x are distinct
-        - all the types t are declared
+        - all the types t are well formed
  */
 fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     for (index, parameter) in method_specification.parameters.iter().enumerate() {
-        // is the parameter type declared?
+        // is the parameter type well formed?
         check_type(&parameter.type_, environment, types)?;
 
         // are the method parameters distinct?
@@ -253,7 +308,7 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, en
         }
     }
 
-    // is the return type declared?
+    // is the return type well formed?
     check_type(&method_specification.return_type, environment, types)?;
 
     Ok(())
@@ -287,7 +342,7 @@ fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, Generi
             // bounds satisfied?
             check_type_bound(name, instantiation, environment, types)?;
         }
-        GenericType::NumberType => ()
+        GenericType::NumberType => (),
     }
 
     Ok(())
@@ -323,7 +378,7 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
                 }
             }
         }
-        TypeInfo::Interface { bound, methods } => {}
+        TypeInfo::Interface { .. } => {}
     }
 
     Ok(())
@@ -342,7 +397,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
         Expression::MethodCall { .. } => {
             todo!()
         }
-        Expression::StructLiteral { name, bound, field_expressions } => {
+        Expression::StructLiteral { name, field_expressions, .. } => {
             // TODO check for bound missing..
             match types.get(name) {
                 None => {
@@ -388,7 +443,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
             let type_info = types.get(type_name).expect("Expression can't evaluate to an unknown type");
 
             match type_info {
-                TypeInfo::Struct { fields, ..} => {
+                TypeInfo::Struct { fields, .. } => {
                     if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
                         Ok(field.type_.clone())
                     } else {
