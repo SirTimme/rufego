@@ -12,10 +12,15 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
-    // bound, fields, methods
-    Struct(&'a Vec<GenericBinding<'a>>, &'a Vec<GenericBinding<'a>>, HashMap<&'a str, &'a MethodDeclaration<'a>>),
-    // bound, methods
-    Interface(&'a Vec<GenericBinding<'a>>, &'a Vec<MethodSpecification<'a>>),
+    Struct {
+        bound: &'a Vec<GenericBinding<'a>>,
+        fields: &'a Vec<GenericBinding<'a>>,
+        methods: HashMap<&'a str, &'a MethodDeclaration<'a>>,
+    },
+    Interface {
+        bound: &'a Vec<GenericBinding<'a>>,
+        methods: &'a Vec<MethodSpecification<'a>>,
+    },
 }
 
 #[derive(Debug)]
@@ -26,10 +31,10 @@ pub(crate) struct TypeError {
 impl<'a> TypeInfo<'a> {
     fn method_spec(&self, method_name: &'a str) -> Option<&'a MethodSpecification<'a>> {
         match self {
-            TypeInfo::Struct(.., methods) => {
+            TypeInfo::Struct { methods, .. } => {
                 methods.get(method_name).map(|method| &method.specification)
             }
-            TypeInfo::Interface(.., methods) => {
+            TypeInfo::Interface { methods, .. } => {
                 methods.iter().find(|method| method.name == method_name)
             }
         }
@@ -46,8 +51,8 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                 return Err(TypeError { message: format!("ERROR: Type {:?} already declared", name) });
             } else {
                 let type_info = match literal {
-                    TypeLiteral::Struct { fields } => TypeInfo::Struct(bound, fields, HashMap::new()),
-                    TypeLiteral::Interface { methods } => TypeInfo::Interface(bound, methods),
+                    TypeLiteral::Struct { fields } => TypeInfo::Struct { bound, fields, methods: HashMap::new() },
+                    TypeLiteral::Interface { methods } => TypeInfo::Interface { bound, methods },
                 };
 
                 types.insert(*name, type_info);
@@ -62,10 +67,10 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
                 None => {
                     return Err(TypeError { message: format!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_) });
                 }
-                Some(TypeInfo::Interface(_, _)) => {
+                Some(TypeInfo::Interface { .. }) => {
                     return Err(TypeError { message: format!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_) });
                 }
-                Some(TypeInfo::Struct(_, _, methods)) => {
+                Some(TypeInfo::Struct { methods, .. }) => {
                     // method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
                         return Err(TypeError { message: format!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_) });
@@ -118,15 +123,15 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     let mut environment = HashMap::new();
 
     // keep track of bound types
-    let mut instantiated_types= Vec::new();
+    let mut instantiated_types = Vec::new();
 
     for binding in &receiver.instantiation {
         // only interface types are allowed
         let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
 
         match type_info {
-            TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
-            TypeInfo::Interface(_, _) => {
+            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface { .. } => {
                 environment.insert(binding.name, binding.type_.clone());
             }
         }
@@ -197,8 +202,8 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
         let type_info = types.get(type_name(&binding.type_)).expect("Type should be declared");
 
         match type_info {
-            TypeInfo::Struct(_, _, _) => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
-            TypeInfo::Interface(_, _) => {
+            TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
+            TypeInfo::Interface { .. } => {
                 environment.insert(binding.name, binding.type_.clone());
             }
         }
@@ -240,7 +245,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], type_lite
 fn check_method_specification<'a>(method_specification: &MethodSpecification, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
     for (index, parameter) in method_specification.parameters.iter().enumerate() {
         // is the parameter type declared?
-        check_type(&parameter.type_, environment , types)?;
+        check_type(&parameter.type_, environment, types)?;
 
         // are the method parameters distinct?
         if method_specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
@@ -249,7 +254,7 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, en
     }
 
     // is the return type declared?
-    check_type(&method_specification.return_type, environment , types)?;
+    check_type(&method_specification.return_type, environment, types)?;
 
     Ok(())
 }
@@ -292,7 +297,7 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
     let type_info = types.get(type_).expect("Occurrence of type was checked beforehand");
 
     match type_info {
-        TypeInfo::Struct(bound, ..) => {
+        TypeInfo::Struct { bound, .. } => {
             // correct amount of generic parameters supplied?
             if bound.len() != instantiation.len() {
                 return Err(TypeError { message: format!("ERROR: Type '{type_}' has {} generic parameters but {} parameters were supplied", bound.len(), instantiation.len()) });
@@ -318,7 +323,7 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
                 }
             }
         }
-        TypeInfo::Interface(_, _) => {}
+        TypeInfo::Interface { bound, methods } => {}
     }
 
     Ok(())
@@ -345,7 +350,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 }
                 Some(type_info) => {
                     match type_info {
-                        TypeInfo::Struct(_, fields, _) => {
+                        TypeInfo::Struct { fields, .. } => {
                             // correct amount of parameters supplied?
                             if field_expressions.len() != fields.len() {
                                 return Err(TypeError { message: format!("ERROR: Struct {:?} has {:?} fields but {:?} values were supplied", name, fields.len(), field_expressions.len()) });
@@ -362,7 +367,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
 
                             Ok(GenericType::NamedType(name, Vec::new()))
                         }
-                        TypeInfo::Interface(_, _) => {
+                        TypeInfo::Interface { .. } => {
                             Err(TypeError { message: String::from("ERROR: An interface can't be instantiated") })
                         }
                     }
@@ -383,14 +388,14 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
             let type_info = types.get(type_name).expect("Expression can't evaluate to an unknown type");
 
             match type_info {
-                TypeInfo::Struct(_, fields, _) => {
+                TypeInfo::Struct { fields, ..} => {
                     if let Some(field) = fields.iter().find(|field| &field.name == field_var) {
                         Ok(field.type_.clone())
                     } else {
                         Err(TypeError { message: format!("ERROR: Struct type {:?} doesn't have a field named {:?}", type_name, field_var) })
                     }
                 }
-                TypeInfo::Interface(_, _) => {
+                TypeInfo::Interface { .. } => {
                     Err(TypeError { message: String::from("ERROR: An interface can't be selected") })
                 }
             }

@@ -29,7 +29,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     let type_info = types.get(name).expect("Type name should exist");
 
                     match type_info {
-                        TypeInfo::Struct(_, _, methods) => {
+                        TypeInfo::Struct { methods, ..} => {
                             let method_declaration = methods.get(method).expect("Type should implement this method");
 
                             let mut local_context = HashMap::new();
@@ -47,7 +47,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
                             Ok(evaluate(&method_declaration.body, &local_context, types)?)
                         }
-                        TypeInfo::Interface(_, _) => {
+                        TypeInfo::Interface { .. } => {
                             Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") })
                         }
                     }
@@ -75,12 +75,12 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     let type_info = types.get(name).expect("Value can only be a declared struct");
 
                     match type_info {
-                        TypeInfo::Struct(_, fields, _) => {
+                        TypeInfo::Struct { fields, .. } => {
                             let field_index = fields.iter().position(|binding| &binding.name == field).expect("Field name should exists");
 
                             Ok(struct_values.get(field_index).expect("Field should exists").clone())
                         }
-                        TypeInfo::Interface(_, _) => {
+                        TypeInfo::Interface { .. } => {
                             Err(EvalError { message: String::from("Cant instantiate an interface literal") })
                         }
                     }
