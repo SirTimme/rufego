@@ -230,8 +230,6 @@ fn check_method<'a>(receiver: &GenericReceiver, specification: &MethodSpecificat
     }
 
     for binding in &specification.bound {
-        println!("Type of parameter is {:#?}", binding.type_);
-
         // Ψ is well formed under Φ ?
         check_type(&binding.type_, &receiver_environment, types)?;
 
@@ -491,7 +489,20 @@ pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericT
         return Err(TypeError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
     }
 
-    let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
+    let child_type_info = match types.get(type_name(child_type)) {
+        None => {
+            // if type is not found, check environment of receiver
+            match environment.get(type_name(child_type)) {
+                None => {
+                    return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", child_type) });
+                }
+                Some(type_) => {
+                    types.get(type_name(type_)).expect("Type should be present in types")
+                }
+            }
+        }
+        Some(type_info) => type_info,
+    };
 
     Ok(())
 }
