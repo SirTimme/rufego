@@ -15,7 +15,7 @@ type Consumer(type T Container(Client(int))) struct {
     b T
 }
 
-func (this Consumer(type T Client(T))) build(type)(client T) T {
+func (this Consumer(type T Client(int))) build(type V T)(client T) T {
     return client
 }
 
