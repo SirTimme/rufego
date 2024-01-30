@@ -301,7 +301,7 @@ fn check_method_specification<'a>(specification: &MethodSpecification, type_lite
 
     for binding in &specification.bound {
         // Ψ is well formed under Φ ?
-        check_type(&binding.type_, &type_literal_environment, types)?;
+        check_type(&binding.type_, type_literal_environment, types)?;
 
         let type_info = obtain_nested_typeinfo(&binding.type_, type_literal_environment, types)?;
 
