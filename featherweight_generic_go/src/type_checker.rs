@@ -1,5 +1,5 @@
 use std::collections::{HashMap};
-use diagnostic::{report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_implementation, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_type, report_duplicate_type_formal, report_interface_implementation, report_interfaces_forbidden, report_invalid_binop, report_literal_wrong_argcount, report_select_interface, report_select_number, report_select_type_parameter, report_struct_literal_interface, report_unknown_field, report_unknown_receiver_type, report_unknown_struct_literal, report_unknown_type, report_unknown_type_formal, report_unknown_type_parameter, report_unknown_variable, report_wrong_type_bound};
+use diagnostic::{report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_implementation, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_type, report_duplicate_type_formal, report_interface_implementation, report_invalid_binop, report_literal_wrong_argcount, report_select_interface, report_select_number, report_select_type_parameter, report_struct_literal_interface, report_unknown_field, report_unknown_receiver_type, report_unknown_struct_literal, report_unknown_type, report_unknown_type_formal, report_unknown_type_parameter, report_unknown_variable, report_wrong_type_bound};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // clone() loswerden
@@ -9,7 +9,7 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO subtype for int?
 // TODO formal/actual typing? (currently only formal)
 // TODO typecontexts already in FG used
-// TODO wegen Pascal fragen..
+// TODO Methodcall-Chaining environment passen
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
 
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -392,8 +392,74 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 None => Err(TypeError { message: report_unknown_variable(name) })
             }
         }
-        Expression::MethodCall { .. } => {
-            todo!()
+        Expression::MethodCall { expression, method, bound, parameter_expressions } => {
+            // evaluate type of the body expression
+            let expression_type = check_expression(expression, environment, types)?;
+
+            // typeinfo for the body expression
+            let type_metadata = obtain_nested_typeinfo(&expression_type, environment, types)?;
+
+            match type_metadata {
+                TypeMetaData::Struct { methods, .. } => {
+                    // is the method implemented for this type?
+                    match methods.get(method) {
+                        Some(declaration) => {
+                            // correct amount of parameters supplied?
+                            if parameter_expressions.len() != declaration.specification.parameters.len() {
+                                return Err(TypeError { message: format!("ERROR: Method '{method}' expects {:?} parameters but {:?} parameters were supplied", declaration.specification.parameters.len(), parameter_expressions.len()) });
+                            }
+
+                            // does the types of the parameter expressions match the types of the method parameters?
+                            for (index, expression) in parameter_expressions.iter().enumerate() {
+                                if let Some(parameter) = declaration.specification.parameters.get(index) {
+                                    // evaluate type of the supplied parameter expression
+                                    let expression_type = check_expression(expression, environment, types)?;
+
+                                    // is the parameter at least a subtype of the method parameter?
+                                    is_subtype_of(&expression_type, &parameter.type_, environment, types)?;
+                                }
+                            }
+
+                            // is the return type declared?
+                            check_type(&declaration.specification.return_type, environment, types)?;
+
+                            Ok(declaration.specification.return_type.clone())
+                        }
+                        None => {
+                            Err(TypeError { message: format!("ERROR: Method '{method}' isn't implemented for type {:?}", expression_type) })
+                        }
+                    }
+                }
+                TypeMetaData::Interface { methods, .. } => {
+                    // does the method exist on the interface?
+                    match methods.iter().find(|method_specification| &method_specification.name == method) {
+                        Some(method_specification) => {
+                            // correct amount of parameters supplied?
+                            if parameter_expressions.len() != method_specification.parameters.len() {
+                                return Err(TypeError { message: format!("ERROR: Method {:?} expects {:?} parameters but {:?} parameters were supplied", method, method_specification.parameters.len(), parameter_expressions.len()) });
+                            }
+
+                            for (index, expression) in parameter_expressions.iter().enumerate() {
+                                if let Some(parameter) = method_specification.parameters.get(index) {
+                                    // evaluate type of the supplied parameter expression
+                                    let expression_type = check_expression(expression, environment, types)?;
+
+                                    // is the parameter at least a subtype of the method parameter?
+                                    is_subtype_of(&expression_type, &parameter.type_, environment, types)?;
+                                }
+                            }
+
+                            // is the return type declared?
+                            check_type(&method_specification.return_type, environment, types)?;
+
+                            Ok(method_specification.return_type.clone())
+                        }
+                        None => {
+                            Err(TypeError { message: format!("ERROR: Interface {:?} doesn't have a method named {:?}", expression_type, method) })
+                        }
+                    }
+                }
+            }
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             match types.get(name) {
@@ -621,7 +687,22 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
                 is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
             }
         }
-        TypeMetaData::Interface { .. } => return Err(TypeError { message: report_interfaces_forbidden() }),
+        TypeMetaData::Interface { bound, .. } => {
+            // correct amount of parameters supplied?
+            if bound.len() != instantiation.len() {
+                return Err(TypeError { message: format!("ERROR: Type '{type_}' has {} generic parameters but {} parameters were supplied", bound.len(), instantiation.len()) });
+            }
+
+            for (index, parameter) in bound.iter().enumerate() {
+                let instantiated_type = instantiation.get(index).unwrap();
+
+                // instantiated type well formed in its environment?
+                check_type(instantiated_type, environment, types)?;
+
+                // instantiated type subtype of type bound?
+                is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
+            }
+        },
     }
 
     Ok(())

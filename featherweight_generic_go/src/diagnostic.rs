@@ -46,10 +46,6 @@ pub(crate) fn report_unknown_type(type_: &str) -> String {
     format!("Encountered undeclared type '{type_}'")
 }
 
-pub(crate) fn report_interfaces_forbidden() -> String {
-    String::from("Encountered interface type in check of type bounds. Only struct values are allowed")
-}
-
 pub(crate) fn report_unknown_variable(variable: &str) -> String {
     format!("Encountered unknown variable '{variable}'")
 }
