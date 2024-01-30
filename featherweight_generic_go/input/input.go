@@ -5,7 +5,6 @@ type Sender(type) interface {
 }
 
 type Rectangle(type) struct {
-    value int
     amount int
 }
 
@@ -19,11 +18,11 @@ type Receiver(type) interface {}
 
 type Value(type T Sender(), V Receiver()) struct {
     sender T
-    receiver V
+    receiver T
 }
 
 type Box(type) struct {}
 
 func main() {
-    _ = Value(Rectangle(), Box()){ Rectangle(){ 4, 2 }, Triangle(){} }
+    _ = Rectangle(){ 42 }.amount
 }
