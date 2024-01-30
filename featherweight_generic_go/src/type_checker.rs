@@ -448,8 +448,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
         Expression::MethodCall { .. } => {
             todo!()
         }
-        Expression::StructLiteral { name, field_expressions, .. } => {
-            // TODO check for bound missing..
+        Expression::StructLiteral { name, instantiation, field_expressions } => {
             match types.get(name) {
                 None => {
                     Err(TypeError { message: format!("ERROR: Struct literal {:?} is not declared", name) })

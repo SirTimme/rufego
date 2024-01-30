@@ -32,8 +32,8 @@ peg::parser!(
 
         rule generic_type() -> GenericType<'a>
             = [Identifier(name)] [LeftParenthesis] values:(generic_type() ** [Comma]) [RightParenthesis] { GenericType::NamedType(name, values) }
-            / [Int] { GenericType::NumberType }
             / [Identifier(name)] { GenericType::TypeParameter(name) }
+            / [Int] { GenericType::NumberType }
 
         rule generic_receiver() -> GenericReceiver<'a>
             = [Identifier(receiver_var)] [Identifier(receiver_type)] [LeftParenthesis] generic_params:formal_type() [RightParenthesis] { GenericReceiver { name: receiver_var, type_: receiver_type, instantiation: generic_params } }
@@ -58,8 +58,8 @@ peg::parser!(
                 Expression::Select { expression: Box::new(expression), field }
             }
             --
-            [Identifier(name)] [LeftParenthesis] bound:(generic_type() ** [Comma]) [RightParenthesis] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
-                Expression::StructLiteral { name, bound, field_expressions }
+            [Identifier(name)] [LeftParenthesis] instantiation:(generic_type() ** [Comma]) [RightParenthesis] [LeftCurlyBrace] field_expressions:(expression() ** [Comma]) [RightCurlyBrace] {
+                Expression::StructLiteral { name, instantiation, field_expressions }
             }
             [Identifier(name)] {
                 Expression::Variable { name }
@@ -140,7 +140,7 @@ pub(crate) enum Expression<'a> {
     },
     StructLiteral {
         name: &'a str,
-        bound: Vec<GenericType<'a>>,
+        instantiation: Vec<GenericType<'a>>,
         field_expressions: Vec<Expression<'a>>,
     },
     Select {
