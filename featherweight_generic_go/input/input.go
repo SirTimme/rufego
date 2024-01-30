@@ -1,27 +1,29 @@
 package main;
 
-type Container(type T Client()) interface {}
-
-type Client(type V Client()) interface {
-    build(type R V)(a R, b V) int
-    destroy(type R V)() int
+type Sender(type) interface {
+    send(type)(a int) int
 }
 
-type Box(type V Client, R V) struct {
+type Rectangle(type) struct {
     value int
-    b int
-    c int
+    amount int
 }
 
-type Consumer(type T Container(Client(int))) struct {
-    a Consumer(Container())
-    b T
+type Triangle(type) struct {}
+
+func (this Rectangle(type)) send(type)(a int) int {
+    return 1
 }
 
-func (this Consumer(type T Client())) build(type V T)(client T) V {
-    return client
+type Receiver(type) interface {}
+
+type Value(type T Sender(), V Receiver()) struct {
+    sender T
+    receiver V
 }
+
+type Box(type) struct {}
 
 func main() {
-    _ = (Box(){ 1, 5, 6 }.b)
+    _ = Value(Rectangle(), Box()){ Rectangle(){ 4, 2 }, Triangle(){} }
 }
