@@ -241,20 +241,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
         // Ψ is well formed under Φ ?
         check_type(&binding.type_, &receiver_environment, types)?;
 
-        let type_info = match types.get(type_name(&binding.type_)) {
-            None => {
-                // if type is not found, check environment of receiver
-                match receiver_environment.get(type_name(&binding.type_)) {
-                    None => {
-                        return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
-                    }
-                    Some(type_) => {
-                        types.get(type_name(type_)).expect("Type should be present in types")
-                    }
-                }
-            }
-            Some(type_info) => type_info,
-        };
+        let type_info = obtain_nested_typeinfo(&binding.type_, &receiver_environment, types)?;
 
         match type_info {
             TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
@@ -265,7 +252,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     }
 
     // concatenate both type environments
-    let environment = method_environment.into_iter().chain(receiver_environment).collect();
+    let mut environment = method_environment.into_iter().chain(receiver_environment).collect();
 
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // parameter type well formed?
@@ -280,17 +267,14 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     // return-type well formed?
     check_type(&specification.return_type, &environment, types)?;
 
-    // build type context
-    let mut context = HashMap::new();
-
-    context.insert(receiver.name, receiver_type);
+    environment.insert(receiver.name, receiver_type);
 
     for parameter in &specification.parameters {
-        context.insert(parameter.name, parameter.type_.clone());
+        environment.insert(parameter.name, parameter.type_.clone());
     }
 
     // evaluate type of body expression
-    let expression_type = check_expression(body, &context, types)?;
+    let expression_type = check_expression(body, &environment, types)?;
 
     // is the body type a subtype of the return type?
     is_subtype_of(&expression_type, &specification.return_type, &environment, types)?;
@@ -319,20 +303,7 @@ fn check_method_specification<'a>(specification: &MethodSpecification, type_lite
         // Ψ is well formed under Φ ?
         check_type(&binding.type_, &type_literal_environment, types)?;
 
-        let type_info = match types.get(type_name(&binding.type_)) {
-            Some(type_info) => type_info,
-            None => {
-                // if type is not found, check environment of receiver
-                match type_literal_environment.get(type_name(&binding.type_)) {
-                    Some(type_) => {
-                        types.get(type_name(type_)).expect("ERROR: A type was not present in the types HashMap!")
-                    }
-                    None => {
-                        return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", binding.type_) });
-                    }
-                }
-            }
-        };
+        let type_info = obtain_nested_typeinfo(&binding.type_, type_literal_environment, types)?;
 
         match type_info {
             TypeInfo::Struct { .. } => return Err(TypeError { message: String::from("ERROR: Only interface types can be a bound") }),
@@ -343,11 +314,15 @@ fn check_method_specification<'a>(specification: &MethodSpecification, type_lite
     }
 
     // concatenate both type environments
+    let mut environment = HashMap::new();
+
     for (key, value) in type_literal_environment.iter() {
-        method_environment.insert(key, value.clone());
+        environment.insert(*key, value.clone());
     }
 
-    let environment = method_environment;
+    for (key, value) in method_environment.iter() {
+        environment.insert(key, value.clone());
+    }
 
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // is the parameter type well formed?
@@ -371,9 +346,6 @@ fn check_method_specification<'a>(specification: &MethodSpecification, type_lite
         - all named types must be instantiated with type arguments
 */
 fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-    // T => generic parameter
-    // Consumer(int) / Consumer(Client()) / Consumer(T) => named type ??
-    // TODO correct instantiation of bounds..
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             if !environment.contains_key(type_parameter) {
@@ -410,23 +382,11 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
             }
 
             for (index, parameter) in bound.iter().enumerate() {
-                match &parameter.type_ {
-                    GenericType::TypeParameter(type_parameter) => {
-                        if !environment.contains_key(type_parameter) {
-                            return Err(TypeError { message: format!("ERROR: Usage of unknown generic parameter '{type_parameter}'") });
-                        }
-                    }
-                    GenericType::NamedType(nested_type, nested_instantiation) => {
-                        let instantiated_type = instantiation.get(index).expect("Vectors are of the same length");
+                let instantiated_type = instantiation.get(index).expect("Vectors have the same length");
 
-                        // check if instantiated type is at least subtype of corresponding type
-                        is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
+                check_type(instantiated_type, environment, types)?;
 
-                        // check nested parameter
-                        check_type_bound(nested_type, nested_instantiation, environment, types)?;
-                    }
-                    GenericType::NumberType => ()
-                }
+                is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
             }
         }
         TypeInfo::Interface { .. } => {}
@@ -455,7 +415,22 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 }
                 Some(type_info) => {
                     match type_info {
-                        TypeInfo::Struct { fields, .. } => {
+                        TypeInfo::Struct { bound, fields, .. } => {
+                            // create custom environment for struct literals
+                            let mut struct_literal_environment = HashMap::new();
+
+                            for binding in bound.iter() {
+                                struct_literal_environment.insert(binding.name, binding.type_.clone());
+                            }
+
+                            for (key, value) in environment
+                            {
+                                struct_literal_environment.insert(key, value.clone());
+                            }
+
+                            // bound correct instantiated?
+                            check_type_bound(name, instantiation, &struct_literal_environment, types)?;
+
                             // correct amount of parameters supplied?
                             if field_expressions.len() != fields.len() {
                                 return Err(TypeError { message: format!("ERROR: Struct {:?} has {:?} fields but {:?} values were supplied", name, fields.len(), field_expressions.len()) });
@@ -464,9 +439,9 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                             for (index, expression) in field_expressions.iter().enumerate() {
                                 if let Some(field) = fields.get(index) {
                                     // evaluate type of supplied parameter
-                                    let field_type = check_expression(expression, environment, types)?;
+                                    let field_type = check_expression(expression, &struct_literal_environment, types)?;
 
-                                    is_subtype_of(&field_type, &field.type_, environment, types)?;
+                                    is_subtype_of(&field_type, &field.type_, &struct_literal_environment, types)?;
                                 }
                             }
 
@@ -542,21 +517,67 @@ pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericT
     }
 
     let child_type_info = match types.get(type_name(child_type)) {
+        Some(type_info) => type_info,
         None => {
             // if type is not found, check environment of receiver
             match environment.get(type_name(child_type)) {
-                None => {
-                    return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", child_type) });
-                }
                 Some(type_) => {
                     types.get(type_name(type_)).expect("Type should be present in types")
                 }
+                None => {
+                    return Err(TypeError { message: format!("ERROR: Use of undeclared type formal '{:?}'", child_type) });
+                }
             }
         }
-        Some(type_info) => type_info,
     };
 
+    let parent_type_info = obtain_nested_typeinfo(parent_type, environment, types)?;
+
+    let methods = match parent_type_info {
+        TypeInfo::Struct { .. } => {
+            return Err(TypeError { message: String::from("ERROR: An struct value cant be the parent type") });
+        }
+        TypeInfo::Interface { methods, .. } => methods,
+    };
+
+    for method in methods.iter() {
+        match child_type_info.method_spec(method.name) {
+            None => {
+                return Err(TypeError { message: format!("ERROR: Method '{}' of parent type '{:?}' is not implemented for child type '{:?}'", method.name, parent_type, child_type) });
+            }
+            Some(method_spec) => {
+                if method.return_type != method_spec.return_type {
+                    return Err(TypeError { message: format!("ERROR: Method {:?} of parent type {:?} has return type {:?} but return type of child implementation is {:?}", method.name, parent_type, method.return_type, method_spec.return_type) });
+                }
+
+                if method.parameters.len() != method_spec.parameters.len() {
+                    return Err(TypeError { message: format!("ERROR: Method {:?} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len()) });
+                }
+
+                for (index, method_parameter) in method.parameters.iter().enumerate() {
+                    let child_method_parameter = method_spec.parameters.get(index).expect("Method parameter should be supplied");
+
+                    if child_method_parameter.type_ != method_parameter.type_ {
+                        return Err(TypeError { message: format!("ERROR: Method parameter {:?} of method {:?} of parent type {:?} has type {:?} but parameter type of child implementation is {:?}", method_parameter.type_, method.name, parent_type, method.return_type, child_method_parameter) });
+                    }
+                }
+            }
+        }
+    }
+
     Ok(())
+}
+
+fn obtain_nested_typeinfo<'a>(type_: &GenericType, environment: &HashMap<&str, GenericType>, types: &HashMap<&str, TypeInfo<'a>>) -> Result<TypeInfo<'a>, TypeError> {
+    match types.get(type_name(type_)) {
+        Some(type_info) => Ok(type_info.clone()),
+        None => {
+            match environment.get(type_name(type_)) {
+                Some(nested_type) => Ok(obtain_nested_typeinfo(nested_type, environment, types)?),
+                None => Err(TypeError { message: format!("ERROR: Use of undeclared type '{:?}'", type_) }),
+            }
+        }
+    }
 }
 
 fn type_name<'a>(type_: &'a GenericType) -> &'a str {
