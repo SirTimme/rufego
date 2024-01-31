@@ -601,15 +601,15 @@ pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericT
     for method in methods.iter() {
         match child_type_info.method_specification(method.name) {
             None => {
-                return Err(TypeError { message: format!("ERROR: Method '{}' of parent type '{:?}' is not implemented for child type '{:?}'", method.name, parent_type, child_type) });
+                return Err(TypeError { message: format!("ERROR: Method '{}' of parent type '{}' is not implemented for child type '{}'", method.name, parent_type.name(), child_type.name()) });
             }
             Some(method_spec) => {
                 if method.return_type != method_spec.return_type {
-                    return Err(TypeError { message: format!("ERROR: Method {:?} of parent type {:?} has return type {:?} but return type of child implementation is {:?}", method.name, parent_type, method.return_type, method_spec.return_type) });
+                    return Err(TypeError { message: format!("ERROR: Method '{}' of parent type '{}' has return type '{}' but return type of child implementation is '{}'", method.name, parent_type.name(), method.return_type.name(), method_spec.return_type.name()) });
                 }
 
                 if method.parameters.len() != method_spec.parameters.len() {
-                    return Err(TypeError { message: format!("ERROR: Method {:?} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len()) });
+                    return Err(TypeError { message: format!("ERROR: Method {} of parent type {:?} has {:?} parameters but child implementation has {:?} parameters", method.name, parent_type, method.parameters.len(), method_spec.parameters.len()) });
                 }
 
                 for (index, method_parameter) in method.parameters.iter().enumerate() {
