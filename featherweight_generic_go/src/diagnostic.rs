@@ -58,14 +58,6 @@ pub(crate) fn report_assert_type_mismatch(body: &str, assert: &str) -> String {
     format!("Expression of assertion evaluated to a type of '{body}', asserted type was '{assert}'")
 }
 
-pub(crate) fn report_select_number() -> String {
-    String::from("Select-Expression evaluated to a number type")
-}
-
-pub(crate) fn report_select_type_parameter() -> String {
-    String::from("Select-Expression evaluated to a type parameter")
-}
-
 pub(crate) fn report_select_interface() -> String {
     String::from("Select-Expression evaluated to an interface type")
 }
@@ -84,6 +76,18 @@ pub(crate) fn report_struct_literal_interface(interface: &str) -> String {
 
 pub(crate) fn report_literal_wrong_argcount(struct_: &str, expected: usize, actual: usize) -> String {
     format!("Struct type '{struct_}' has '{expected}' fields but '{actual}' values were provided")
+}
+
+pub(crate) fn report_wrong_method_parameters(method: &str, expected: usize, actual: usize) -> String {
+    format!("Method '{method}' has '{expected}' parameters but '{actual}' parameters were provided")
+}
+
+pub(crate) fn report_method_not_implemented(method: &str, type_: &str) -> String {
+    format!("Method '{method}' is not implemented for type '{type_}'")
+}
+
+pub(crate) fn report_unknown_interface_method(interface: &str, method: &str) -> String {
+    format!("Interface '{interface}' does not have a method named '{method}'")
 }
 
 

@@ -7,7 +7,7 @@ use interpreter::{evaluate, Value};
 use parser::language::parse;
 use parser::{Expression, Program};
 use token::{LexerError, Token};
-use type_checker::{create_type_metadata, check_program, TypeMetaData};
+use type_checker::{create_type_infos, check_program, TypeInfo};
 
 mod token;
 mod parser;
@@ -22,55 +22,41 @@ fn main() {
 fn read_input(filename: &str) {
     match read_to_string(filename) {
         Ok(source) => lex_source(source),
-        Err(error) => {
-            eprintln!("Reading in the source file failed with the following error: {error}")
-        }
+        Err(error) => eprintln!("READ-ERROR: {error}"),
     }
 }
 
 fn lex_source(source: String) {
     match Token::lexer(&source).collect::<Result<Vec<Token>, LexerError>>() {
         Ok(tokens) => parse_tokens(&tokens),
-        Err(lexer_error) => {
-            eprintln!("Lexing the source failed with the following error: {:?}", lexer_error)
-        }
+        Err(lexer_error) => eprintln!("LEX-ERROR: {:?}", lexer_error),
     }
 }
 
 fn parse_tokens(tokens: &[Token]) {
     match parse(tokens) {
-        Ok(program) => create_type_infos(&program),
-        Err(parser_error) => {
-            eprintln!("Parsing failed with the following error: {parser_error}")
-        }
+        Ok(program) => build_type_infos(&program),
+        Err(error) => eprintln!("PARSE-ERROR: {error}"),
     }
 }
 
-fn create_type_infos(program: &Program) {
-    match create_type_metadata(program) {
+fn build_type_infos(program: &Program) {
+    match create_type_infos(program) {
         Ok(type_infos) => typecheck_program(program, &type_infos),
-        Err(type_info_error) => {
-            eprintln!("Creating the type infos failed with the following error: {}", type_info_error.message);
-        }
+        Err(error) => eprintln!("TYPE-INFO-ERROR: {}", error.message),
     }
 }
 
-fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeMetaData>) {
+fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
         Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
-        Err(type_error) => {
-            eprintln!("Typechecking failed with the following error: {}", type_error.message);
-        }
+        Err(error) => eprintln!("TYPE-ERROR: {}", error.message),
     }
 }
 
-fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeMetaData>) {
+fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, types) {
-        Ok(value) => {
-            println!("Program evaluates to {:?}", value);
-        }
-        Err(eval_error) => {
-            eprintln!("Evaluation of program failed with following error: {}", eval_error.message);
-        }
+        Ok(value) => println!("RESULT: {:?}", value),
+        Err(error) => eprintln!("EVAL-ERROR: {}", error.message),
     }
 }

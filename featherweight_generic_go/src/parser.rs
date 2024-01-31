@@ -114,6 +114,16 @@ pub(crate) enum GenericType<'a> {
     NumberType,
 }
 
+impl<'a> GenericType<'a> {
+    pub(crate) fn name(&self) -> &'a str {
+        match self {
+            GenericType::TypeParameter(type_parameter) => type_parameter,
+            GenericType::NamedType(name, _) => name,
+            GenericType::NumberType => "int",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct GenericBinding<'a> {
     pub(crate) name: &'a str,

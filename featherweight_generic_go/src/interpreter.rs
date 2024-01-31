@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use parser::{Expression, GenericType, Operator};
-use type_checker::{is_subtype_of, TypeMetaData};
+use type_checker::{is_subtype_of, TypeInfo};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Value<'a> {
@@ -13,7 +13,7 @@ pub(crate) struct EvalError {
     pub(crate) message: String,
 }
 
-pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeMetaData<'a>>) -> Result<Value<'a>, EvalError> {
+pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Value<'a>, EvalError> {
     match expression {
         Expression::Variable { name } => {
             Ok(context.get(name).expect("Variable should exist in this context").clone())
@@ -29,7 +29,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     let type_info = types.get(name).expect("Type name should exist");
 
                     match type_info {
-                        TypeMetaData::Struct { methods, ..} => {
+                        TypeInfo::Struct { methods, ..} => {
                             let method_declaration = methods.get(method).expect("Type should implement this method");
 
                             let mut local_context = HashMap::new();
@@ -47,7 +47,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
                             Ok(evaluate(&method_declaration.body, &local_context, types)?)
                         }
-                        TypeMetaData::Interface { .. } => {
+                        TypeInfo::Interface { .. } => {
                             Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") })
                         }
                     }
@@ -75,12 +75,12 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     let type_info = types.get(name).expect("Value can only be a declared struct");
 
                     match type_info {
-                        TypeMetaData::Struct { fields, .. } => {
+                        TypeInfo::Struct { fields, .. } => {
                             let field_index = fields.iter().position(|binding| &binding.name == field).expect("Field name should exists");
 
                             Ok(struct_values.get(field_index).expect("Field should exists").clone())
                         }
-                        TypeMetaData::Interface { .. } => {
+                        TypeInfo::Interface { .. } => {
                             Err(EvalError { message: String::from("Cant instantiate an interface literal") })
                         }
                     }
