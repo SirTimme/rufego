@@ -18,7 +18,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
         Expression::Variable { name } => {
             Ok(context.get(name).expect("Variable should exist in this context").clone())
         }
-        Expression::MethodCall { expression, method, parameter_expressions, .. } => {
+        Expression::MethodCall { expression, method, bound, parameter_expressions } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
@@ -30,18 +30,26 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
                     match type_info {
                         TypeInfo::Struct { methods, ..} => {
-                            let method_declaration = methods.get(method).expect("Type should implement this method");
+                            let method_declaration = methods.get(method).unwrap();
 
                             let mut local_context = HashMap::new();
 
                             local_context.insert(method_declaration.receiver.name, Value::Struct(method_declaration.receiver.type_, values));
 
+                            // insert method parameters in the local context
                             for (index, expression) in parameter_expressions.iter().enumerate() {
                                 if let Some(parameter) = method_declaration.specification.parameters.get(index) {
                                     // evaluate type of the supplied parameter expression
                                     let expression_type = evaluate(expression, context, types)?;
 
                                     local_context.insert(parameter.name, expression_type);
+                                }
+                            }
+
+                            // insert generic parameters in the local context
+                            for (index, expression) in bound.iter().enumerate() {
+                                if let Some(parameter) = method_declaration.specification.bound.get(index) {
+                                    local_context.insert(parameter.name, Value::Struct(expression.name(), Vec::new()));
                                 }
                             }
 
@@ -95,7 +103,20 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                 Value::Struct(name, _) => GenericType::NamedType(name, Vec::new()),
             };
 
-            match is_subtype_of(&value_type, assert, &HashMap::new(), types) {
+            let mut environment = HashMap::new();
+
+            for (key, context_value) in context {
+                match context_value {
+                    Value::Int(_) =>{
+                        environment.insert(*key, GenericType::NumberType);
+                    }
+                    Value::Struct(name, _) => {
+                        environment.insert(*key, GenericType::NamedType(name, Vec::new()));
+                    }
+                }
+            }
+
+            match is_subtype_of(&value_type, assert, &environment, types) {
                 Ok(_) => {}
                 Err(type_error) => {
                     return Err(EvalError { message: format!("ERROR: Runtime-Check of type assertion failed with following error {:?}", type_error) });

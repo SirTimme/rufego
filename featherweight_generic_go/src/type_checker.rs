@@ -1,5 +1,5 @@
 use std::collections::{HashMap};
-use diagnostic::{report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_implementation, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_type, report_duplicate_type_formal, report_interface_implementation, report_invalid_binop, report_literal_wrong_argcount, report_method_not_implemented, report_select_interface, report_struct_literal_interface, report_unknown_field, report_unknown_interface_method, report_unknown_receiver_type, report_unknown_struct_literal, report_unknown_type, report_unknown_type_formal, report_unknown_type_parameter, report_unknown_variable, report_wrong_method_parameters, report_wrong_type_bound};
+use diagnostic::{report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_implementation, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_type, report_duplicate_type_formal, report_interface_implementation, report_invalid_binop, report_literal_wrong_argcount, report_method_not_implemented, report_select_interface, report_struct_literal_interface, report_subtype_number_child_type, report_unknown_field, report_unknown_interface_method, report_unknown_receiver_type, report_unknown_struct_literal, report_unknown_type, report_unknown_type_formal, report_unknown_type_parameter, report_unknown_variable, report_wrong_method_parameters, report_wrong_type_bound};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // TODO ok to use String here for errormessages?
@@ -11,6 +11,10 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO diagnostics namespace
 // TODO Methodcall-Chaining environment passen
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
+// TODO replacing type parameters with their actual types?
+
+type Environment<'a> = HashMap<&'a str, GenericType<'a>>;
+type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
@@ -50,7 +54,7 @@ pub(crate) struct TypeError {
             - type formals (bound)
             - method specifications
  */
-pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&'a str, TypeInfo<'a>>, TypeError> {
+pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, TypeError> {
     let mut type_infos = HashMap::new();
 
     // collect type metadata for type declarations
@@ -96,14 +100,14 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<
         - all declarations are well formed
         - body expression well formed in the empty context
  */
-pub(crate) fn check_program<'a>(program: &'a Program<'a>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<GenericType<'a>, TypeError> {
+pub(crate) fn check_program<'a>(program: &Program<'a>, type_infos: &TypeInfos<'a>) -> Result<GenericType<'a>, TypeError> {
     // declarations well formed?
     for declaration in &program.declarations {
         check_declaration(declaration, type_infos)?;
     }
 
     // body expression well formed in the empty context?
-    check_expression(&program.expression, &HashMap::new(), type_infos)
+    check_expression(&program.expression, &mut HashMap::new(), type_infos)
 }
 
 /*
@@ -112,7 +116,7 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, type_infos: &HashMap<&
         - type declaration is well formed
         - method declaration is well formed
  */
-fn check_declaration<'a>(declaration: &Declaration<'a>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_declaration(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match declaration {
         Declaration::Type { name, bound, literal } => check_type_literal(name, bound, literal, type_infos)?,
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, type_infos)?,
@@ -134,7 +138,7 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, type_infos: &HashMap<&'a
             - all its method specifications are well formed in the literal environment
             - all method names are unique
  */
-fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], literal: &TypeLiteral, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLiteral, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // create environment for the type formals
     let mut environment = HashMap::new();
 
@@ -187,7 +191,7 @@ fn check_type_literal<'a>(name: &'a str, bound: &[GenericBinding<'a>], literal: 
         - body expression well formed in the concatenated environment
         - body expression type is subtype of the return type
  */
-fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &HashMap<&str, TypeInfo>) -> Result<(), TypeError> {
+fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // keep track of bound types
     let mut instantiated_types = Vec::new();
 
@@ -258,7 +262,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     }
 
     // body expression well formed in the concatenated environment?
-    let expression_type = check_expression(body, &environment, type_infos)?;
+    let expression_type = check_expression(body, &mut environment, type_infos)?;
 
     // type of body expression subtype of return type in the concatenated environment?
     is_subtype_of(&expression_type, &specification.return_type, &environment, type_infos)?;
@@ -273,7 +277,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
         - all method parameter types are well formed in the concatenated environment
         - return type is well formed in the concatenated environment
  */
-fn check_method_specification<'a>(specification: &MethodSpecification, literal_environment: &HashMap<&'a str, GenericType<'a>>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_method_specification(specification: &MethodSpecification, literal_environment: &Environment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // type formals of the method distinct to the type formals of the type literal?
     for binding in specification.bound.iter() {
         match literal_environment.get(binding.name) {
@@ -333,7 +337,7 @@ fn check_method_specification<'a>(specification: &MethodSpecification, literal_e
         - all type parameters must be declared in its environment
         - all named types must be instantiated with type arguments that satisfy its bounds
 */
-fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, GenericType<'a>>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+fn check_type(type_: &GenericType, environment: &Environment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             if !environment.contains_key(type_parameter) {
@@ -384,7 +388,7 @@ fn check_type<'a>(type_: &GenericType<'a>, environment: &HashMap<&'a str, Generi
             - left side of operation is a number type
             - right side of operation is a number type
  */
-fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str, GenericType<'a>>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<GenericType<'a>, TypeError> {
+fn check_expression<'a>(expression: &Expression<'a>, environment: &mut Environment<'a>, type_infos: &TypeInfos<'a>) -> Result<GenericType<'a>, TypeError> {
     match expression {
         Expression::Variable { name } => {
             // variable known in the environment?
@@ -393,7 +397,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 None => Err(TypeError { message: report_unknown_variable(name) })
             }
         }
-        Expression::MethodCall { expression, method, parameter_expressions, .. } => {
+        Expression::MethodCall { expression, method, bound, parameter_expressions,  } => {
             // evaluate type of the body expression
             let expression_type = check_expression(expression, environment, type_infos)?;
 
@@ -402,6 +406,9 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                     // is the method implemented for this type?
                     match methods.get(method) {
                         Some(declaration) => {
+                            // correct instantiation of generic parameters?
+                            check_method_bound(declaration, bound, environment, type_infos)?;
+
                             // correct amount of parameters supplied?
                             if parameter_expressions.len() != declaration.specification.parameters.len() {
                                 return Err(TypeError { message: report_wrong_method_parameters(method, declaration.specification.parameters.len(), parameter_expressions.len()) });
@@ -416,6 +423,12 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                                     // is the parameter expression a subtype of the method parameter?
                                     is_subtype_of(&expression_type, &parameter.type_, environment, type_infos)?;
                                 }
+                            }
+
+                            // substitute type parameter with concrete type
+                            for (index, binding) in bound.iter().enumerate() {
+                                let type_name = declaration.specification.bound.get(index).unwrap().name;
+                                environment.insert(type_name, binding.clone());
                             }
 
                             // is the return type well formed?
@@ -445,6 +458,10 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                                     // is the parameter at least a subtype of the method parameter?
                                     is_subtype_of(&expression_type, &parameter.type_, environment, type_infos)?;
                                 }
+                            }
+
+                            for binding in &method_specification.bound {
+                                environment.insert(binding.name, binding.type_.clone());
                             }
 
                             // is the return type declared?
@@ -487,7 +504,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                             for (index, expression) in field_expressions.iter().enumerate() {
                                 if let Some(field) = fields.get(index) {
                                     // evaluate type of supplied parameter
-                                    let field_type = check_expression(expression, &struct_literal_environment, type_infos)?;
+                                    let field_type = check_expression(expression, &mut struct_literal_environment, type_infos)?;
 
                                     // field expression subtype of field type?
                                     is_subtype_of(&field_type, &field.type_, &struct_literal_environment, type_infos)?;
@@ -523,7 +540,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
             // evaluate body expression
             let expression_type = check_expression(expression, environment, type_infos)?;
 
-            let body_type_metadata = match expression_type {
+            let body_type_info = match expression_type {
                 GenericType::NumberType => {
                     return if assert == &GenericType::NumberType {
                         Ok(GenericType::NumberType)
@@ -534,7 +551,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 _ => obtain_nested_typeinfo(&expression_type, environment, type_infos)?,
             };
 
-            let assert_type_metadata = match assert {
+            let assert_type_info = match assert {
                 GenericType::NumberType => {
                     return if expression_type == GenericType::NumberType {
                         Ok(GenericType::NumberType)
@@ -545,7 +562,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
                 _ => obtain_nested_typeinfo(&expression_type, environment, type_infos)?,
             };
 
-            match (assert_type_metadata, body_type_metadata) {
+            match (assert_type_info, body_type_info) {
                 (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
                 (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_assert_type_mismatch(expression_type.name(), assert.name()) }),
                 (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => {
@@ -577,7 +594,7 @@ fn check_expression<'a>(expression: &Expression<'a>, environment: &HashMap<&str,
 /*
     Checks if child_type is a subtype of parent_type
  */
-pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericType, environment: &HashMap<&str, GenericType<'a>>, type_infos: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
+pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType, environment: &Environment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // a type is a subtype of itself
     if parent_type == child_type {
         return Ok(());
@@ -629,7 +646,7 @@ pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericT
 /*
     Gets type info for arbitrary nested types
  */
-fn obtain_nested_typeinfo<'a>(type_: &GenericType, environment: &HashMap<&str, GenericType>, type_infos: &HashMap<&str, TypeInfo<'a>>) -> Result<TypeInfo<'a>, TypeError> {
+fn obtain_nested_typeinfo<'a>(type_: &GenericType, environment: &Environment, type_infos: &TypeInfos<'a>) -> Result<TypeInfo<'a>, TypeError> {
     match type_infos.get(type_.name()) {
         Some(type_info) => Ok(type_info.clone()),
         None => {
@@ -653,10 +670,8 @@ fn obtain_nested_typeinfo<'a>(type_: &GenericType, environment: &HashMap<&str, G
         - instantiated types well formed in its environment
         - instantiated type subtype of type bound
  */
-fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, environment: &HashMap<&'a str, GenericType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), TypeError> {
-    let type_info = types.get(type_).expect("Occurrence of type was checked beforehand");
-
-    match type_info {
+fn check_type_bound(type_: &str, instantiation: &Vec<GenericType>, environment: &Environment, types: &TypeInfos) -> Result<(), TypeError> {
+    match types.get(type_).unwrap() {
         TypeInfo::Struct { bound, .. } => {
             // correct amount of parameters supplied?
             if bound.len() != instantiation.len() {
@@ -676,7 +691,7 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
         TypeInfo::Interface { bound, .. } => {
             // correct amount of parameters supplied?
             if bound.len() != instantiation.len() {
-                return Err(TypeError { message: format!("ERROR: Type '{type_}' has {} generic parameters but {} parameters were supplied", bound.len(), instantiation.len()) });
+                return Err(TypeError { message: format!("ERROR: Type '{type_}' has '{}' generic parameters but '{}' parameters were supplied", bound.len(), instantiation.len()) });
             }
 
             for (index, parameter) in bound.iter().enumerate() {
@@ -689,6 +704,25 @@ fn check_type_bound<'a>(type_: &'a str, instantiation: &Vec<GenericType<'a>>, en
                 is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
             }
         }
+    }
+
+    Ok(())
+}
+
+fn check_method_bound(method_declaration: &MethodDeclaration, instantiation: &Vec<GenericType>, environment: &Environment, types: &TypeInfos) -> Result<(), TypeError> {
+    // correct amount of parameters supplied?
+    if method_declaration.specification.bound.len() != instantiation.len() {
+        return Err(TypeError { message: String::from("Wrong instantiation") });
+    }
+
+    for (index, parameter) in method_declaration.specification.bound.iter().enumerate() {
+        let instantiated_type = instantiation.get(index).unwrap();
+
+        // instantiated type well formed in its environment?
+        check_type(instantiated_type, environment, types)?;
+
+        // instantiated type subtype of type bound?
+        is_subtype_of(instantiated_type, &parameter.type_, environment, types)?;
     }
 
     Ok(())
