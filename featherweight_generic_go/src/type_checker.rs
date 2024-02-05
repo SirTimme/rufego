@@ -584,7 +584,7 @@ pub(crate) fn is_subtype_of<'a>(child_type: &GenericType, parent_type: &GenericT
     }
 
     if child_type == &GenericType::NumberType {
-        return Err(TypeError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
+        return Err(TypeError { message: report_subtype_number_child_type(child_type.name(), parent_type.name()) });
     }
 
     let child_type_info = obtain_nested_typeinfo(child_type, environment, type_infos)?;

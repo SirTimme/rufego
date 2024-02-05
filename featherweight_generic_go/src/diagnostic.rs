@@ -90,5 +90,9 @@ pub(crate) fn report_unknown_interface_method(interface: &str, method: &str) -> 
     format!("Interface '{interface}' does not have a method named '{method}'")
 }
 
+pub(crate) fn report_subtype_number_child_type(child_type: &str, parent_type: &str) -> String {
+    format!("Subtype check failed. Child type was of type '{child_type}' and parent type was of type '{parent_type}'")
+}
+
 
 
