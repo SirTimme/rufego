@@ -51,8 +51,8 @@ peg::parser!(
             expression:(@) [Dot] [LeftParenthesis] assert:generic_type() [RightParenthesis] {
                 Expression::TypeAssertion { expression: Box::new(expression), assert }
             }
-            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] bound:(generic_type() ** [Comma]) [RightParenthesis] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
-                Expression::MethodCall { expression: Box::new(expression), method, bound, parameter_expressions }
+            expression:(@) [Dot] [Identifier(method)] [LeftParenthesis] instantiation:(generic_type() ** [Comma]) [RightParenthesis] [LeftParenthesis] parameter_expressions:(expression() ** [Comma]) [RightParenthesis] {
+                Expression::MethodCall { expression: Box::new(expression), method, instantiation, parameter_expressions }
             }
             expression:(@) [Dot] [Identifier(field)] {
                 Expression::Select { expression: Box::new(expression), field }
@@ -145,7 +145,7 @@ pub(crate) enum Expression<'a> {
     MethodCall {
         expression: Box<Expression<'a>>,
         method: &'a str,
-        bound: Vec<GenericType<'a>>,
+        instantiation: Vec<GenericType<'a>>,
         parameter_expressions: Vec<Expression<'a>>,
     },
     StructLiteral {

@@ -18,7 +18,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
         Expression::Variable { name } => {
             Ok(context.get(name).expect("Variable should exist in this context").clone())
         }
-        Expression::MethodCall { expression, method, bound, parameter_expressions } => {
+        Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
@@ -26,7 +26,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                     Err(EvalError { message: String::from("ERROR: Can't call a method on an integer value") })
                 }
                 Value::Struct(name, values) => {
-                    let type_info = types.get(name).expect("Type name should exist");
+                    let type_info = types.get(name).unwrap();
 
                     match type_info {
                         TypeInfo::Struct { methods, ..} => {
@@ -47,7 +47,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                             }
 
                             // insert generic parameters in the local context
-                            for (index, expression) in bound.iter().enumerate() {
+                            for (index, expression) in instantiation.iter().enumerate() {
                                 if let Some(parameter) = method_declaration.specification.bound.get(index) {
                                     local_context.insert(parameter.name, Value::Struct(expression.name(), Vec::new()));
                                 }

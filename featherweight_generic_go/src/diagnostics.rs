@@ -73,3 +73,11 @@ pub(crate) fn report_literal_wrong_argcount(struct_: &str, expected: usize, actu
 pub(crate) fn report_subtype_type_mismatch(child_type: &str, parent_type: &str) -> String {
     format!("Subtype check failed. Child type was of type '{child_type}' and parent type was of type '{parent_type}'")
 }
+
+pub(crate) fn report_wrong_method_parameters(method: &str, expected: usize, actual: usize) -> String {
+    format!("Method '{method}' has '{expected}' parameters but '{actual}' parameters were provided")
+}
+
+pub(crate) fn report_method_not_implemented(method: &str, type_: &str) -> String {
+    format!("Method '{method}' is not implemented for type '{type_}'")
+}
