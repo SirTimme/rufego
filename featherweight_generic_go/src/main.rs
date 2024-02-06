@@ -13,7 +13,7 @@ mod token;
 mod parser;
 mod type_checker;
 mod interpreter;
-mod diagnostic;
+mod diagnostics;
 
 fn main() {
     read_input("featherweight_generic_go/input/input.go");

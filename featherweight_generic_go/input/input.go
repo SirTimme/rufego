@@ -1,29 +1,16 @@
 package main;
 
-type Sender(type) interface {
-    send(type)(a Receiver()) int
-}
-
 type Any(type) interface {}
 
-type Receiver(type) interface {
-    receive(type)(a int) int
-}
+type Box(type) struct {}
 
-type Rectangle(type) struct {
-    amount int
-}
+type Square(type) struct {}
 
-type Triangle(type) struct {}
-
-func (this Rectangle(type)) getAmount(type T Any())() int {
-    return this.amount
-}
-
-func (this Triangle(type)) buildRectangle(type T Any())() T {
-    return Rectangle(){ 69 }
+type Rectangle(type T Any(), R Any()) struct {
+    sender T
+    receiver R
 }
 
 func main() {
-    _ = Triangle(){}.buildRectangle(Rectangle())().getAmount(Triangle())()
+    _ = Rectangle(Box(), Square()){ Box(){}, Square(){} }
 }
