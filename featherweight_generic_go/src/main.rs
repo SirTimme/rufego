@@ -54,8 +54,8 @@ fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     }
 }
 
-fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
-    match evaluate(expression, context, types) {
+fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
+    match evaluate(expression, context, type_infos) {
         Ok(value) => println!("RESULT: {:?}", value),
         Err(error) => eprintln!("EVAL-ERROR: {}", error.message),
     }
