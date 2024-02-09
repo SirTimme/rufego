@@ -1,21 +1,62 @@
-pub(crate) fn report_duplicate_type(name: &str) -> String {
-    format!("Type '{name}' was already declared")
+pub(crate) fn report_duplicate_declaration_error(type_name: &str) -> String {
+    format!("Declaration of type '{type_name}' failed. Type was already declared")
 }
 
-pub(crate) fn report_interface_implementation(method_name: &str, type_: &str) -> String {
-    format!("Interface method '{method_name}' can only be implemented by struct types, provided type '{type_}' is an interface")
+pub(crate) enum MethodImplementationError {
+    InterfaceReceiverType,
+    UnknownReceiverType,
+    DuplicateMethodImplementation,
 }
 
-pub(crate) fn report_duplicate_method_implementation(method_name: &str, type_: &str) -> String {
-    format!("Method '{method_name}' was already implemented for type '{type_}'")
+pub(crate) fn report_method_implementation_error(method_name: &str, type_: &str, error_cause: MethodImplementationError) -> String {
+    let cause = match error_cause {
+        MethodImplementationError::InterfaceReceiverType => format!("Provided receiver type '{type_}' is an 'interface' type"),
+        MethodImplementationError::UnknownReceiverType => format!("Tried to implement method for undeclared receiver type {type_}"),
+        MethodImplementationError::DuplicateMethodImplementation => format!("Method is already implemented for receiver type '{type_}'"),
+    };
+
+    format!("Implementation of method '{method_name}' failed: {cause}")
 }
 
-pub(crate) fn report_unknown_receiver_type(type_: &str, method: &str) -> String {
-    format!("Encountered unknown receiver type '{type_}' while declaring method '{method}'")
+pub(crate) enum TypeBoundError {
+    StructType,
+    UnknownType,
 }
 
-pub(crate) fn report_wrong_type_bound() -> String {
-    String::from("Only interface types can define a type bound. Provided type was of type 'int' or 'struct'")
+pub(crate) fn report_type_bound_literal_error(literal_name: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
+    let cause = match error_cause {
+        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
+        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
+    };
+
+    format!("Declaration of type literal '{literal_name}' failed: {cause}")
+}
+
+pub(crate) fn report_type_bound_method_spec_error(method_name: &str, interface: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
+    let cause = match error_cause {
+        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
+        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
+    };
+
+    format!("Declaration of method specification '{method_name}' for interface '{interface}' failed: {cause}")
+}
+
+pub(crate) fn report_type_bound_method_receiver_error(method_name: &str, receiver_type: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
+    let cause = match error_cause {
+        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound of the receiver"),
+        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound of the receiver"),
+    };
+
+    format!("Declaration of method '{method_name}' for receiver type '{receiver_type}' failed: {cause}")
+}
+
+pub(crate) fn report_type_bound_method_error(method_name: &str, receiver_type: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
+    let cause = match error_cause {
+        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound of the method"),
+        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound of the method"),
+    };
+
+    format!("Declaration of method '{method_name}' for receiver type '{receiver_type}' failed: {cause}")
 }
 
 pub(crate) fn report_duplicate_field_name(field_name: &str, struct_: &str) -> String {

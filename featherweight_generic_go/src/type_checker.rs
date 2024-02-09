@@ -1,5 +1,5 @@
 use std::collections::{HashMap};
-use diagnostics::{report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_implementation, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_type, report_interface_implementation, report_invalid_binop, report_literal_wrong_argcount, report_method_not_implemented, report_select_interface, report_struct_literal_interface, report_subtype_type_mismatch, report_unknown_field, report_unknown_receiver_type, report_unknown_struct_literal, report_unknown_type, report_unknown_type_parameter, report_unknown_variable, report_wrong_method_parameters, report_wrong_type_bound};
+use diagnostics::{MethodImplementationError, report_assert_type_mismatch, report_duplicate_field_name, report_duplicate_method_name, report_duplicate_method_parameter, report_duplicate_declaration_error, report_invalid_binop, report_literal_wrong_argcount, report_method_implementation_error, report_method_not_implemented, report_select_interface, report_struct_literal_interface, report_subtype_type_mismatch, report_unknown_field, report_unknown_struct_literal, report_unknown_type, report_unknown_type_parameter, report_unknown_variable, report_wrong_method_parameters, TypeBoundError, report_type_bound_method_receiver_error, report_type_bound_literal_error, report_type_bound_method_spec_error, report_type_bound_method_error};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // TODO Self recursion in struct
@@ -63,7 +63,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
     for declaration in &program.declarations {
         if let Declaration::Type { name: type_name, bound, literal } = declaration {
             if type_infos.contains_key(type_name) {
-                return Err(TypeError { message: report_duplicate_type(type_name) });
+                return Err(TypeError { message: report_duplicate_declaration_error(type_name) });
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields } => TypeInfo::Struct { bound, fields, methods: HashMap::new() },
@@ -79,14 +79,21 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
     for declaration in &program.declarations {
         if let Declaration::Method(method) = declaration {
             match type_infos.get_mut(method.receiver.type_) {
-                Some(TypeInfo::Interface { .. }) => return Err(TypeError { message: report_interface_implementation(method.specification.name, method.receiver.type_) }),
+                Some(TypeInfo::Interface { .. }) => {
+                    let error_message = report_method_implementation_error(method.specification.name, method.receiver.type_, MethodImplementationError::InterfaceReceiverType);
+                    return Err(TypeError { message: error_message });
+                }
                 Some(TypeInfo::Struct { methods, .. }) => {
                     // is the method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        return Err(TypeError { message: report_duplicate_method_implementation(method.specification.name, method.receiver.type_) });
+                        let error_message = report_method_implementation_error(method.specification.name, method.receiver.type_, MethodImplementationError::DuplicateMethodImplementation);
+                        return Err(TypeError { message: error_message });
                     }
                 }
-                None => return Err(TypeError { message: report_unknown_receiver_type(method.receiver.type_, method.specification.name) }),
+                None => {
+                    let error_message = report_method_implementation_error(method.specification.name, method.receiver.type_, MethodImplementationError::UnknownReceiverType);
+                    return Err(TypeError { message: error_message });
+                }
             }
         }
     }
@@ -140,7 +147,7 @@ fn check_declaration(declaration: &Declaration, type_infos: &TypeInfos) -> Resul
             - all its method specifications are well-formed in the literal environment
             - all method names are unique
  */
-fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLiteral, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn check_type_literal(literal_name: &str, bound: &[GenericBinding], literal: &TypeLiteral, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // create environment for the type formals
     let mut type_environment = HashMap::new();
 
@@ -149,11 +156,11 @@ fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLitera
         match type_infos.get(binding.type_.name()) {
             Some(type_info) => {
                 match type_info {
-                    TypeInfo::Struct { .. } => return Err(TypeError { message: report_wrong_type_bound() }),
+                    TypeInfo::Struct { .. } => return Err(TypeError { message: report_type_bound_literal_error(literal_name, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
                     TypeInfo::Interface { .. } => _ = type_environment.insert(binding.name, binding.type_.clone()),
                 }
             }
-            None => return Err(TypeError { message: format!("Encountered unknown type '{}' for type parameter '{}' in literal '{name}'", binding.type_.name(), binding.name) })
+            None => return Err(TypeError { message: report_type_bound_literal_error(literal_name, binding.type_.name(), binding.name, TypeBoundError::UnknownType) })
         }
     }
 
@@ -162,7 +169,7 @@ fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLitera
             for (index, field) in fields.iter().enumerate() {
                 // field names distinct?
                 if fields.iter().skip(index + 1).any(|binding| binding.name == field.name) {
-                    return Err(TypeError { message: report_duplicate_field_name(field.name, name) });
+                    return Err(TypeError { message: report_duplicate_field_name(field.name, literal_name) });
                 }
 
                 // field type well-formed in the literal environment?
@@ -173,11 +180,11 @@ fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLitera
             for (index, method_specification) in methods.iter().enumerate() {
                 // method names unique?
                 if methods.iter().skip(index + 1).any(|method_spec| method_spec.name == method_specification.name) {
-                    return Err(TypeError { message: report_duplicate_method_name(method_specification.name, name) });
+                    return Err(TypeError { message: report_duplicate_method_name(method_specification.name, literal_name) });
                 }
 
                 // method specification well-formed in the literal environment?
-                check_method_specification(method_specification, &type_environment, type_infos)?;
+                check_method_specification(literal_name, method_specification, &type_environment, type_infos)?;
             }
         }
     }
@@ -192,7 +199,7 @@ fn check_type_literal(name: &str, bound: &[GenericBinding], literal: &TypeLitera
         - all method parameter types are well-formed in the concatenated environment
         - return type is well-formed in the concatenated environment
  */
-fn check_method_specification(specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn check_method_specification(interface: &str, specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // create environment for method type formals
     let mut method_environment = HashMap::new();
 
@@ -204,11 +211,11 @@ fn check_method_specification(specification: &MethodSpecification, literal_envir
         match type_infos.get(binding.type_.name()) {
             Some(type_info) => {
                 match type_info {
-                    TypeInfo::Struct { .. } => return Err(TypeError { message: report_wrong_type_bound() }),
+                    TypeInfo::Struct { .. } => return Err(TypeError { message: report_type_bound_method_spec_error(specification.name, interface, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
                     TypeInfo::Interface { .. } => _ = method_environment.insert(binding.name, binding.type_.clone()),
                 }
             }
-            None => return Err(TypeError { message: format!("Encountered unknown type '{}' for type formal '{}'", binding.type_.name(), binding.name) })
+            None => return Err(TypeError { message: report_type_bound_method_spec_error(specification.name, interface, binding.type_.name(), binding.name, TypeBoundError::UnknownType) }),
         }
     }
 
@@ -262,11 +269,11 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
                 match type_infos.get(binding.type_.name()) {
                     Some(type_info) => {
                         match type_info {
-                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_wrong_type_bound() }),
+                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_type_bound_method_receiver_error(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
                             TypeInfo::Interface { .. } => _ = receiver_environment.insert(binding.name, binding.type_.clone()),
                         }
                     }
-                    None => return Err(TypeError { message: format!("Encountered unknown type '{}' for type formal '{}'", binding.type_.name(), binding.name) })
+                    None => return Err(TypeError { message: report_type_bound_method_receiver_error(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::UnknownType) })
                 }
 
                 instantiated_types.push(binding.type_.clone());
@@ -281,11 +288,11 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
                 match type_infos.get(binding.type_.name()) {
                     Some(type_info) => {
                         match type_info {
-                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_wrong_type_bound() }),
+                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_type_bound_method_error(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
                             TypeInfo::Interface { .. } => _ = method_environment.insert(binding.name, binding.type_.clone()),
                         }
                     }
-                    None => return Err(TypeError { message: format!("Encountered unknown type '{}' for type formal '{}'", binding.type_.name(), binding.name) }),
+                    None => return Err(TypeError { message: report_type_bound_method_error(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
                 }
             }
 
@@ -316,7 +323,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
 
             Ok(())
         }
-        None => Err(TypeError { message: format!("Tried to implement method '{}' for undeclared receiver type '{}'", specification.name, receiver.type_) })
+        None => Err(TypeError { message: report_method_implementation_error(specification.name, receiver.type_, MethodImplementationError::UnknownReceiverType) })
     }
 }
 
@@ -403,7 +410,6 @@ fn check_expression<'a>(
                 GenericType::NamedType(type_name, _) => type_infos.get(type_name).unwrap(),
                 GenericType::NumberType => return Err(TypeError { message: String::from("Cant call a method on a number type") })
             };
-
 
             match type_info {
                 TypeInfo::Struct { methods, .. } => {
@@ -752,6 +758,7 @@ fn check_type_bound(type_: &str, instantiation: &Vec<GenericType>, type_environm
 
     Ok(())
 }
+
 fn check_method_bound(formal_bound: &Vec<GenericBinding>, instantiation: &Vec<GenericType>, type_environment: &TypeEnvironment, types: &TypeInfos) -> Result<(), TypeError> {
     // correct amount of parameters supplied?
     if formal_bound.len() != instantiation.len() {
