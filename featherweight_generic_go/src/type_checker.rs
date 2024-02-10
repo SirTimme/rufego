@@ -10,7 +10,7 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO subtyping mit 2 type parameters?
 
 // Type name -> Type Info
-type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
+pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
 
 // Type parameter -> Bound
 type TypeEnvironment<'a> = HashMap<&'a str, GenericType<'a>>;

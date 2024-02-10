@@ -4,16 +4,18 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use logos::Logos;
 use interpreter::{evaluate, Value};
+use monomorpher::monomorph;
 use parser::language::parse;
 use parser::{Expression, Program};
 use token::{LexerError, Token};
-use type_checker::{create_type_infos, check_program, TypeInfo};
+use type_checker::{create_type_infos, check_program, TypeInfo, TypeInfos};
 
 mod token;
 mod parser;
 mod type_checker;
 mod interpreter;
 mod diagnostics;
+mod monomorpher;
 
 fn main() {
     read_input("featherweight_generic_go/input/input.go");
@@ -49,7 +51,10 @@ fn build_type_infos(program: &Program) {
 
 fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
-        Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
+        Ok(_) => {
+            evaluate_program(&program.expression, &HashMap::new(), type_infos);
+            monomorph_program(program, type_infos);
+        },
         Err(error) => eprintln!("{}", error.message),
     }
 }
@@ -58,5 +63,12 @@ fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, typ
     match evaluate(expression, context, type_infos) {
         Ok(value) => println!("RESULT: {:?}", value),
         Err(error) => eprintln!("{}", error.message),
+    }
+}
+
+fn monomorph_program(program: &Program, type_infos: &TypeInfos) {
+    match monomorph(program, type_infos) {
+        Ok(_) => {}
+        Err(_) => {}
     }
 }
