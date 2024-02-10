@@ -16,7 +16,7 @@ pub(crate) struct EvalError {
 pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Value<'a>, EvalError> {
     match expression {
         Expression::Variable { name } => {
-            Ok(context.get(name).expect("Variable should exist in this context").clone())
+            Ok(context.get(name).unwrap().clone())
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let value = evaluate(expression, context, types)?;
