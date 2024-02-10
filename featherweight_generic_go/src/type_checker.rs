@@ -80,18 +80,30 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
         if let Declaration::Method(method) = declaration {
             match type_infos.get_mut(method.receiver.type_) {
                 Some(TypeInfo::Interface { .. }) => {
-                    let error_message = report_invalid_method_receiver(method.specification.name, method.receiver.type_, MethodImplementationError::InterfaceReceiverType);
+                    let error_message = report_invalid_method_receiver(
+                        method.specification.name,
+                        method.receiver.type_,
+                        MethodImplementationError::InterfaceReceiverType,
+                    );
                     return Err(TypeError { message: error_message });
                 }
                 Some(TypeInfo::Struct { methods, .. }) => {
                     // is the method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        let error_message = report_invalid_method_receiver(method.specification.name, method.receiver.type_, MethodImplementationError::DuplicateMethodImplementation);
+                        let error_message = report_invalid_method_receiver(
+                            method.specification.name,
+                            method.receiver.type_,
+                            MethodImplementationError::DuplicateMethodImplementation,
+                        );
                         return Err(TypeError { message: error_message });
                     }
                 }
                 None => {
-                    let error_message = report_invalid_method_receiver(method.specification.name, method.receiver.type_, MethodImplementationError::UnknownReceiverType);
+                    let error_message = report_invalid_method_receiver(
+                        method.specification.name,
+                        method.receiver.type_,
+                        MethodImplementationError::UnknownReceiverType,
+                    );
                     return Err(TypeError { message: error_message });
                 }
             }
@@ -156,7 +168,10 @@ fn check_type_literal(literal_name: &str, bound: &[GenericBinding], literal: &Ty
         match type_infos.get(binding.type_.name()) {
             Some(type_info) => {
                 match type_info {
-                    TypeInfo::Struct { .. } => return Err(TypeError { message: report_invalid_literal_type_bound(literal_name, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
+                    TypeInfo::Struct { .. } => {
+                        let error_msg = report_invalid_literal_type_bound(literal_name, binding.type_.name(), binding.name, TypeBoundError::StructType);
+                        return Err(TypeError { message: error_msg });
+                    }
                     TypeInfo::Interface { .. } => _ = type_environment.insert(binding.name, binding.type_.clone()),
                 }
             }
@@ -169,7 +184,8 @@ fn check_type_literal(literal_name: &str, bound: &[GenericBinding], literal: &Ty
             for (index, field) in fields.iter().enumerate() {
                 // field names distinct?
                 if fields.iter().skip(index + 1).any(|binding| binding.name == field.name) {
-                    return Err(TypeError { message: report_duplicate_literal_parameter(field.name, literal_name, TypeDeclarationError::DuplicateFieldStruct) });
+                    let error_msg = report_duplicate_literal_parameter(field.name, literal_name, TypeDeclarationError::DuplicateFieldStruct);
+                    return Err(TypeError { message: error_msg });
                 }
 
                 // field type well-formed in the literal environment?
@@ -180,7 +196,8 @@ fn check_type_literal(literal_name: &str, bound: &[GenericBinding], literal: &Ty
             for (index, method_specification) in methods.iter().enumerate() {
                 // method names unique?
                 if methods.iter().skip(index + 1).any(|method_spec| method_spec.name == method_specification.name) {
-                    return Err(TypeError { message: report_duplicate_literal_parameter(method_specification.name, literal_name, TypeDeclarationError::DuplicateMethodInterface) });
+                    let error_msg = report_duplicate_literal_parameter(method_specification.name, literal_name, TypeDeclarationError::DuplicateMethodInterface);
+                    return Err(TypeError { message: error_msg });
                 }
 
                 // method specification well-formed in the literal environment?
@@ -199,7 +216,12 @@ fn check_type_literal(literal_name: &str, bound: &[GenericBinding], literal: &Ty
         - all method parameter types are well-formed in the concatenated environment
         - return type is well-formed in the concatenated environment
  */
-fn check_method_specification(interface_name: &str, specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn check_method_specification(
+    interface_name: &str,
+    specification: &MethodSpecification,
+    literal_environment: &TypeEnvironment,
+    type_infos: &TypeInfos,
+) -> Result<(), TypeError> {
     // create environment for method type formals
     let mut method_environment = HashMap::new();
 
@@ -212,14 +234,26 @@ fn check_method_specification(interface_name: &str, specification: &MethodSpecif
             Some(type_info) => {
                 match type_info {
                     TypeInfo::Struct { .. } => {
-                        let error_msg = report_invalid_method_spec_type_bound(specification.name, interface_name, binding.type_.name(), binding.name, TypeBoundError::StructType);
+                        let error_msg = report_invalid_method_spec_type_bound(
+                            specification.name,
+                            interface_name,
+                            binding.type_.name(),
+                            binding.name,
+                            TypeBoundError::StructType,
+                        );
                         return Err(TypeError { message: error_msg });
                     }
                     TypeInfo::Interface { .. } => _ = method_environment.insert(binding.name, binding.type_.clone()),
                 }
             }
             None => {
-                let error_msg = report_invalid_method_spec_type_bound(specification.name, interface_name, binding.type_.name(), binding.name, TypeBoundError::UnknownType);
+                let error_msg = report_invalid_method_spec_type_bound(
+                    specification.name,
+                    interface_name,
+                    binding.type_.name(),
+                    binding.name,
+                    TypeBoundError::UnknownType,
+                );
                 return Err(TypeError { message: error_msg });
             }
         }
@@ -275,11 +309,29 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
                 match type_infos.get(binding.type_.name()) {
                     Some(type_info) => {
                         match type_info {
-                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_invalid_receiver_type_bound(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
+                            TypeInfo::Struct { .. } => {
+                                let error_msg = report_invalid_receiver_type_bound(
+                                    specification.name,
+                                    receiver.type_,
+                                    binding.type_.name(),
+                                    binding.name,
+                                    TypeBoundError::StructType,
+                                );
+                                return Err(TypeError { message: error_msg });
+                            }
                             TypeInfo::Interface { .. } => _ = receiver_environment.insert(binding.name, binding.type_.clone()),
                         }
                     }
-                    None => return Err(TypeError { message: report_invalid_receiver_type_bound(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::UnknownType) })
+                    None => {
+                        let error_msg = report_invalid_receiver_type_bound(
+                            specification.name,
+                            receiver.type_,
+                            binding.type_.name(),
+                            binding.name,
+                            TypeBoundError::UnknownType,
+                        );
+                        return Err(TypeError { message: error_msg });
+                    }
                 }
 
                 instantiated_types.push(binding.type_.clone());
@@ -294,11 +346,29 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
                 match type_infos.get(binding.type_.name()) {
                     Some(type_info) => {
                         match type_info {
-                            TypeInfo::Struct { .. } => return Err(TypeError { message: report_invalid_method_type_bound(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::StructType) }),
+                            TypeInfo::Struct { .. } => {
+                                let error_msg = report_invalid_method_type_bound(
+                                    specification.name,
+                                    receiver.type_,
+                                    binding.type_.name(),
+                                    binding.name,
+                                    TypeBoundError::StructType,
+                                );
+                                return Err(TypeError { message: error_msg });
+                            }
                             TypeInfo::Interface { .. } => _ = method_environment.insert(binding.name, binding.type_.clone()),
                         }
                     }
-                    None => return Err(TypeError { message: report_invalid_method_type_bound(specification.name, receiver.type_, binding.type_.name(), binding.name, TypeBoundError::UnknownType) }),
+                    None => {
+                        let error_msg = report_invalid_method_type_bound(
+                            specification.name,
+                            receiver.type_,
+                            binding.type_.name(),
+                            binding.name,
+                            TypeBoundError::UnknownType,
+                        );
+                        return Err(TypeError { message: error_msg });
+                    }
                 }
             }
 
@@ -350,7 +420,13 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
         - all type parameters must be declared in its environment
         - all named types must be instantiated with type arguments that satisfy its bounds
 */
-fn check_type(type_: &GenericType, type_environment: &TypeEnvironment, type_infos: &TypeInfos, surrounding_type: &str, check_environment: &CheckEnvironment) -> Result<(), TypeError> {
+fn check_type(
+    type_: &GenericType,
+    type_environment: &TypeEnvironment,
+    type_infos: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: &CheckEnvironment,
+) -> Result<(), TypeError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             // type parameter declared?
@@ -612,7 +688,10 @@ fn check_expression<'a>(
                     match (expression_type_info, assert_type_info) {
                         (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
                         (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => (),
-                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name()) }),
+                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => {
+                            let error_msg = report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name());
+                            return Err(TypeError { message: error_msg });
+                        }
                         (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => is_subtype_of(assert, &expression_type, type_environment, type_infos)?
                     }
                 }
@@ -625,7 +704,10 @@ fn check_expression<'a>(
                     match (expression_type_info, assert_type_info) {
                         (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
                         (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => (),
-                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name()) }),
+                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => {
+                            let error_msg = report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name());
+                            return Err(TypeError { message: error_msg });
+                        }
                         (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => is_subtype_of(assert, &expression_type, type_environment, type_infos)?
                     }
                 }
@@ -648,16 +730,32 @@ fn check_expression<'a>(
                 // OK
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
                 // LHS wrong
-                (GenericType::TypeParameter(type_parameter), GenericType::NumberType) => Err(TypeError { message: report_invalid_bin_op(method_name, type_parameter, GenericType::NumberType.name(), BinOpError::Lhs) }),
-                (GenericType::NamedType(name, _), GenericType::NumberType) => Err(TypeError { message: report_invalid_bin_op(method_name, name, GenericType::NumberType.name(), BinOpError::Lhs) }),
+                (GenericType::TypeParameter(type_parameter), GenericType::NumberType) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, type_parameter, GenericType::NumberType.name(), BinOpError::Lhs) })
+                },
+                (GenericType::NamedType(name, _), GenericType::NumberType) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, name, GenericType::NumberType.name(), BinOpError::Lhs) })
+                },
                 // RHS wrong
-                (GenericType::NumberType, GenericType::TypeParameter(type_parameter)) => Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), type_parameter, BinOpError::Rhs) }),
-                (GenericType::NumberType, GenericType::NamedType(name, _)) => Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), name, BinOpError::Rhs) }),
+                (GenericType::NumberType, GenericType::TypeParameter(type_parameter)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), type_parameter, BinOpError::Rhs) })
+                },
+                (GenericType::NumberType, GenericType::NamedType(name, _)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), name, BinOpError::Rhs) })
+                },
                 // BOTH wrong
-                (GenericType::TypeParameter(lhs_type_parameter), GenericType::TypeParameter(rhs_type_parameter)) => Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type_parameter, rhs_type_parameter, BinOpError::Both) }),
-                (GenericType::NamedType(lhs_name, _), GenericType::NamedType(rhs_name, _)) => Err(TypeError { message: report_invalid_bin_op(method_name, lhs_name, rhs_name, BinOpError::Both) }),
-                (GenericType::TypeParameter(lhs_type), GenericType::NamedType(rhs_type, _)) => Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) }),
-                (GenericType::NamedType(lhs_type, _), GenericType::TypeParameter(rhs_type)) => Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) }),
+                (GenericType::TypeParameter(lhs_type_parameter), GenericType::TypeParameter(rhs_type_parameter)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type_parameter, rhs_type_parameter, BinOpError::Both) })
+                },
+                (GenericType::NamedType(lhs_name, _), GenericType::NamedType(rhs_name, _)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_name, rhs_name, BinOpError::Both) })
+                },
+                (GenericType::TypeParameter(lhs_type), GenericType::NamedType(rhs_type, _)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
+                },
+                (GenericType::NamedType(lhs_type, _), GenericType::TypeParameter(rhs_type)) => {
+                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
+                },
             }
         }
     }
@@ -755,7 +853,13 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
     Ok(())
 }
 
-fn concat_type_environments<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos, surrounding_type: &str, check_environment: CheckEnvironment) -> Result<TypeEnvironment<'a>, TypeError> {
+fn concat_type_environments<'a>(
+    outer: &TypeEnvironment<'a>,
+    inner: &TypeEnvironment<'a>,
+    type_infos: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: CheckEnvironment
+) -> Result<TypeEnvironment<'a>, TypeError> {
     let mut concat_environment = HashMap::new();
 
     // types in the outer environment well-formed in the empty environment?
@@ -785,7 +889,14 @@ fn concat_type_environments<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnviron
         - instantiated types well-formed in its environment
         - instantiated type subtype of type bound
  */
-fn check_type_bound(type_: &str, instantiation: &Vec<GenericType>, type_environment: &TypeEnvironment, types: &TypeInfos, surrounding_type: &str, check_environment: &CheckEnvironment) -> Result<(), TypeError> {
+fn check_type_bound(
+    type_: &str,
+    instantiation: &Vec<GenericType>,
+    type_environment: &TypeEnvironment,
+    types: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: &CheckEnvironment
+) -> Result<(), TypeError> {
     match types.get(type_).unwrap() {
         TypeInfo::Struct { bound, .. } => {
             // correct amount of parameters supplied?
@@ -826,7 +937,15 @@ fn check_type_bound(type_: &str, instantiation: &Vec<GenericType>, type_environm
     Ok(())
 }
 
-fn check_method_bound(method_name: &str, formal_bound: &Vec<GenericBinding>, instantiation: &Vec<GenericType>, type_environment: &TypeEnvironment, types: &TypeInfos, surrounding_type: &str, check_environment: CheckEnvironment) -> Result<(), TypeError> {
+fn check_method_bound(
+    method_name: &str,
+    formal_bound: &Vec<GenericBinding>,
+    instantiation: &Vec<GenericType>,
+    type_environment: &TypeEnvironment,
+    types: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: CheckEnvironment
+) -> Result<(), TypeError> {
     // correct amount of parameters supplied?
     if formal_bound.len() != instantiation.len() {
         return Err(TypeError { message: report_invalid_type_bound_method_arg_mismatch(method_name, formal_bound.len(), instantiation.len()) });
