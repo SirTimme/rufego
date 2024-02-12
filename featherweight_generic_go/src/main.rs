@@ -51,24 +51,21 @@ fn build_type_infos(program: &Program) {
 
 fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
-        Ok(_) => {
-            evaluate_program(&program.expression, &HashMap::new(), type_infos);
-            monomorph_program(program, type_infos);
-        },
+        Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
         Err(error) => eprintln!("{}", error.message),
     }
 }
 
 fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, type_infos) {
-        Ok(value) => println!("RESULT: {:?}", value),
+        Ok(value) => {
+            println!("Result: {:?}", value);
+            monomorph_program(expression, type_infos);
+        },
         Err(error) => eprintln!("{}", error.message),
     }
 }
 
-fn monomorph_program(program: &Program, type_infos: &TypeInfos) {
-    match monomorph(program, type_infos) {
-        Ok(_) => {}
-        Err(_) => {}
-    }
+fn monomorph_program(expression: &Expression, type_infos: &TypeInfos) {
+    if monomorph(expression, type_infos).is_ok() {}
 }

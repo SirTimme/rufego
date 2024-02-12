@@ -13,10 +13,10 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
 
 // Type parameter -> Bound
-type TypeEnvironment<'a> = HashMap<&'a str, GenericType<'a>>;
+pub(crate) type TypeEnvironment<'a> = HashMap<&'a str, GenericType<'a>>;
 
 // Variables -> Type
-type VariableEnvironment<'a> = HashMap<&'a str, GenericType<'a>>;
+pub(crate) type VariableEnvironment<'a> = HashMap<&'a str, GenericType<'a>>;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum TypeInfo<'a> {
@@ -478,7 +478,7 @@ fn check_type(
             - left side of operation is a number type
             - right side of operation is a number type
  */
-fn check_expression<'a>(
+pub(crate) fn check_expression<'a>(
     expression: &Expression<'a>,
     variable_environment: &mut VariableEnvironment<'a>,
     type_environment: &mut TypeEnvironment<'a>,

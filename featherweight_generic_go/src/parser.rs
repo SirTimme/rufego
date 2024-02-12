@@ -107,7 +107,7 @@ pub(crate) enum TypeLiteral<'a> {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GenericType<'a> {
     TypeParameter(&'a str),
     NamedType(&'a str, Vec<GenericType<'a>>),
@@ -124,7 +124,7 @@ impl<'a> GenericType<'a> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct GenericBinding<'a> {
     pub(crate) name: &'a str,
     pub(crate) type_: GenericType<'a>,
