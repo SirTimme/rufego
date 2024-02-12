@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
-use parser::{Expression, GenericBinding, GenericType};
+use parser::{Expression, GenericType};
 use type_checker::{check_expression, TypeEnvironment, TypeError, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
