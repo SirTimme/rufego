@@ -1,5 +1,5 @@
 use std::collections::{HashMap};
-use diagnostics::{MethodImplementationError, report_duplicate_method_spec_parameter, report_duplicate_type_declaration, report_invalid_method_receiver, report_unknown_type, TypeBoundError, report_invalid_receiver_type_bound, report_invalid_literal_type_bound, report_invalid_method_spec_type_bound, report_invalid_method_type_bound, report_duplicate_literal_parameter, TypeDeclarationError, report_duplicate_method_parameter, CheckEnvironment, report_invalid_type_parameter, report_invalid_variable, report_invalid_method_call_arg_count_mismatch, report_invalid_method_call_not_implemented, report_invalid_method_call_number, report_invalid_struct_literal_arg_count_mismatch, report_invalid_struct_literal, StructLiteralError, report_invalid_select_unknown_field, report_invalid_select_interface, report_invalid_assert_type_mismatch, report_invalid_bin_op, BinOpError, report_invalid_subtype_method, report_invalid_subtype_base, report_invalid_subtype_method_call, report_method_not_implemented, report_invalid_subtype_number, SubTypeNumberError, report_invalid_subtype_struct, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch, report_invalid_type_bound_arg_mismatch, report_invalid_type_bound_method_arg_mismatch, report_duplicate_type_formal};
+use diagnostics::{MethodImplementationError, report_duplicate_method_spec_parameter, report_duplicate_type_declaration, report_invalid_method_receiver, report_unknown_type, TypeBoundError, report_invalid_receiver_type_bound, report_invalid_literal_type_bound, report_invalid_method_spec_type_bound, report_invalid_method_type_bound, report_duplicate_literal_parameter, TypeDeclarationError, report_duplicate_method_parameter, CheckEnvironment, report_invalid_type_parameter, report_invalid_variable, report_invalid_method_call_arg_count_mismatch, report_invalid_method_call_not_implemented, report_invalid_method_call_number, report_invalid_struct_literal_arg_count_mismatch, report_invalid_struct_literal, StructLiteralError, report_invalid_select_unknown_field, report_invalid_select_interface, report_invalid_assert_type_mismatch, report_invalid_bin_op, BinOpError, report_invalid_subtype_method, report_invalid_subtype_base, report_invalid_subtype_method_call, report_method_not_implemented, report_invalid_subtype_number, SubTypeNumberError, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch, report_invalid_type_bound_arg_mismatch, report_invalid_type_bound_method_arg_mismatch, report_duplicate_type_formal, report_invalid_subtype_struct_literal};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // TODO Self recursion in struct
@@ -604,7 +604,16 @@ pub(crate) fn check_expression<'a>(
                                 let parameter_type = variable_environment.get(parameter.name).unwrap();
 
                                 // is the supplied parameter expression subtype of the corresponding method parameter?
-                                is_subtype_of(parameter_type, &parameter.type_, type_environment, type_infos)?;
+                                match is_subtype_of(parameter_type, &parameter.type_, type_environment, type_infos) {
+                                    Ok(_) => (),
+                                    Err(error) => {
+                                        let base_error = report_invalid_subtype_base(parameter_type.name(), parameter_type.name());
+                                        //let outer_error = report_invalid_subtype_method_call(method, parameter.name, parameter.type_.name(), parameter_type.name());
+                                        let error_msg = format!("{} {}", base_error, error.message);
+
+                                        return Err(TypeError { message: error_msg });
+                                    }
+                                }
                             }
 
                             Ok(declaration.return_type.clone())
@@ -644,7 +653,15 @@ pub(crate) fn check_expression<'a>(
                                     let field_type = check_expression(expression, variable_environment, type_environment, type_infos, method_name)?;
 
                                     // field expression subtype of field type?
-                                    is_subtype_of(&field_type, &field.type_, type_environment, type_infos)?;
+                                    match is_subtype_of(&field_type, &field.type_, type_environment, type_infos) {
+                                        Ok(_) => (),
+                                        Err(error) => {
+                                            let base_error = report_invalid_subtype_base(field_type.name(), field.type_.name());
+                                            let error_msg = format!("{} {}", base_error, error.message);
+
+                                            return Err(TypeError { message: error_msg });
+                                        }
+                                    }
                                 }
                             }
 
@@ -781,7 +798,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
             match (child_type_info, parent_type_info) {
                 (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => {
                     if child_name != parent_name {
-                        return Err(TypeError { message: report_invalid_subtype_struct(parent_name) });
+                        return Err(TypeError { message: report_invalid_subtype_struct_literal(child_name, parent_name) });
                     }
                 }
                 (TypeInfo::Struct { .. }, TypeInfo::Interface { methods, .. }) => {
@@ -834,20 +851,20 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
                         }
                     }
                 }
-                (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_subtype_base() }),
-                (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => return Err(TypeError { message: report_invalid_subtype_base() }),
+                (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) }),
+                (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) }),
             }
         }
         (GenericType::TypeParameter(child_name), GenericType::TypeParameter(parent_name)) => {
             if child_name != parent_name {
-                return Err(TypeError { message: report_invalid_subtype_base() });
+                return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) });
             }
         }
         (_, GenericType::TypeParameter(parent_name)) => {
             let parent_type = type_environment.get(parent_name).unwrap();
             return is_subtype_of(child_type, parent_type, type_environment, type_infos);
         }
-        (GenericType::TypeParameter(_), GenericType::NamedType(_, _)) => return Err(TypeError { message: report_invalid_subtype_base() }),
+        (GenericType::TypeParameter(child_name), GenericType::NamedType(parent_name, _)) => return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) }),
     }
 
     Ok(())

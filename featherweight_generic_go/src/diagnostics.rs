@@ -169,10 +169,6 @@ pub(crate) fn report_invalid_bin_op(method_name: &str, lhs_type: &str, rhs_type:
     format!("Checking of body expression of method '{method_name}' failed: '{cause}'")
 }
 
-pub(crate) fn report_invalid_subtype_base() -> String {
-    String::from("Subtype check failed:")
-}
-
 pub(crate) fn report_invalid_subtype_method(expression_type: &str, return_type: &str, method_name: &str, receiver_type: &str) -> String {
     format!("Subtype check for expression type '{expression_type}' to be subtype of declared return type '{return_type}' of method '{method_name}' for receiver type '{receiver_type}' failed:")
 }
@@ -197,8 +193,12 @@ pub(crate) fn report_invalid_subtype_number(child_type: &str, parent_type: &str,
     }
 }
 
-pub(crate) fn report_invalid_subtype_struct(parent_type: &str) -> String {
-    format!("Parent type '{parent_type}' is a struct type which can only be the parent type of the same struct type")
+pub(crate) fn report_invalid_subtype_base(child_type: &str, parent_type: &str) -> String {
+    format!("Subtype check of child type '{child_type}' with parent type '{parent_type}' failed:")
+}
+
+pub(crate) fn report_invalid_subtype_struct_literal(child_type: &str, parent_type: &str) -> String {
+    format!("Tried to compare struct type '{parent_type}' with struct type '{child_type}' which cannot be a subtype")
 }
 
 pub(crate) fn report_invalid_subtype_return_type_mismatch(method_name: &str, child_type: &str, child_type_return_type: &str, parent_type: &str, parent_type_return_type: &str) -> String {
