@@ -5,7 +5,7 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO Self recursion in struct
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
 // TODO Distinct Check Parameter name und Type parameter?
-
+// TODO substitution not only in method call?
 // TODO subtyping 2 Interfaces
 // TODO subtyping mit 2 type parameters?
 
@@ -694,41 +694,24 @@ pub(crate) fn check_expression<'a>(
             // evaluate body expression
             let expression_type = check_expression(expression, variable_environment, type_environment, type_infos, method_name)?;
 
-            match (&expression_type, assert) {
-                (GenericType::NumberType, GenericType::NumberType) => return Ok(GenericType::NumberType),
-                (GenericType::NumberType, _) => return Err(TypeError { message: report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name()) }),
-                (_, GenericType::NumberType) => return Err(TypeError { message: report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name()) }),
-                (GenericType::NamedType(expression_type_name, _), GenericType::NamedType(assert_type_name, _)) => {
-                    let expression_type_info = type_infos.get(expression_type_name).unwrap();
-                    let assert_type_info = type_infos.get(assert_type_name).unwrap();
+            // get type info for expression type
+            let expression_type_info = type_infos.get(expression_type.name()).unwrap();
 
-                    match (expression_type_info, assert_type_info) {
-                        (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
-                        (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => (),
-                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => {
-                            let error_msg = report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name());
-                            return Err(TypeError { message: error_msg });
-                        }
-                        (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => is_subtype_of(assert, &expression_type, type_environment, type_infos)?
-                    }
+            let assert_type = match type_infos.get(assert.name()) {
+                None => type_environment.get(assert.name()).unwrap(),
+                Some(_) => assert,
+            };
+
+            let assert_type_info = type_infos.get(assert_type.name()).unwrap();
+
+            match (expression_type_info, assert_type_info) {
+                (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
+                (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => (),
+                (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => is_subtype_of(assert_type, &expression_type, type_environment, type_infos)?,
+                (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => {
+                    let error_msg = report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert_type.name());
+                    return Err(TypeError { message: error_msg });
                 }
-                (_, GenericType::TypeParameter(assert_type_name)) => {
-                    let expression_type_info = type_infos.get(expression_type.name()).unwrap();
-
-                    let assert_type = type_environment.get(assert_type_name).unwrap();
-                    let assert_type_info = type_infos.get(assert_type.name()).unwrap();
-
-                    match (expression_type_info, assert_type_info) {
-                        (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
-                        (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => (),
-                        (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => {
-                            let error_msg = report_invalid_assert_type_mismatch(method_name, expression_type.name(), assert.name());
-                            return Err(TypeError { message: error_msg });
-                        }
-                        (TypeInfo::Struct { .. }, TypeInfo::Interface { .. }) => is_subtype_of(assert, &expression_type, type_environment, type_infos)?
-                    }
-                }
-                (_, _) => {}
             }
 
             Ok(assert.clone())
@@ -749,30 +732,30 @@ pub(crate) fn check_expression<'a>(
                 // LHS wrong
                 (GenericType::TypeParameter(type_parameter), GenericType::NumberType) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, type_parameter, GenericType::NumberType.name(), BinOpError::Lhs) })
-                },
+                }
                 (GenericType::NamedType(name, _), GenericType::NumberType) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, name, GenericType::NumberType.name(), BinOpError::Lhs) })
-                },
+                }
                 // RHS wrong
                 (GenericType::NumberType, GenericType::TypeParameter(type_parameter)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), type_parameter, BinOpError::Rhs) })
-                },
+                }
                 (GenericType::NumberType, GenericType::NamedType(name, _)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), name, BinOpError::Rhs) })
-                },
+                }
                 // BOTH wrong
                 (GenericType::TypeParameter(lhs_type_parameter), GenericType::TypeParameter(rhs_type_parameter)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type_parameter, rhs_type_parameter, BinOpError::Both) })
-                },
+                }
                 (GenericType::NamedType(lhs_name, _), GenericType::NamedType(rhs_name, _)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, lhs_name, rhs_name, BinOpError::Both) })
-                },
+                }
                 (GenericType::TypeParameter(lhs_type), GenericType::NamedType(rhs_type, _)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
-                },
+                }
                 (GenericType::NamedType(lhs_type, _), GenericType::TypeParameter(rhs_type)) => {
                     Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
-                },
+                }
             }
         }
     }
@@ -875,7 +858,7 @@ fn concat_type_environments<'a>(
     inner: &TypeEnvironment<'a>,
     type_infos: &TypeInfos,
     surrounding_type: &str,
-    check_environment: CheckEnvironment
+    check_environment: CheckEnvironment,
 ) -> Result<TypeEnvironment<'a>, TypeError> {
     let mut concat_environment = HashMap::new();
 
@@ -912,7 +895,7 @@ fn check_type_bound(
     type_environment: &TypeEnvironment,
     types: &TypeInfos,
     surrounding_type: &str,
-    check_environment: &CheckEnvironment
+    check_environment: &CheckEnvironment,
 ) -> Result<(), TypeError> {
     match types.get(type_).unwrap() {
         TypeInfo::Struct { bound, .. } => {
@@ -961,7 +944,7 @@ fn check_method_bound(
     type_environment: &TypeEnvironment,
     types: &TypeInfos,
     surrounding_type: &str,
-    check_environment: CheckEnvironment
+    check_environment: CheckEnvironment,
 ) -> Result<(), TypeError> {
     // correct amount of parameters supplied?
     if formal_bound.len() != instantiation.len() {
