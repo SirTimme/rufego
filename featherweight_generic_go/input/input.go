@@ -23,5 +23,5 @@ func (this Triangle(type)) buildRectangle(type T Any())(param T) int {
 }
 
 func main() {
-    _ = Triangle(){}.buildRectangle(Rectangle())(Rectangle(){ 15 })
+    _ = Triangle(){}.buildRectangle(Triangle())(Triangle(){ 15 })
 }

@@ -18,47 +18,6 @@ pub(crate) fn report_invalid_method_receiver(method_name: &str, type_: &str, err
     format!("Implementation of method '{method_name}' failed: {cause}")
 }
 
-pub(crate) enum TypeBoundError {
-    StructType,
-    UnknownType,
-}
-
-pub(crate) fn report_invalid_literal_type_bound(literal_name: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
-    let cause = match error_cause {
-        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
-        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
-    };
-
-    format!("Declaration of type literal '{literal_name}' failed: {cause}")
-}
-
-pub(crate) fn report_invalid_method_spec_type_bound(method_name: &str, interface: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
-    let cause = match error_cause {
-        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
-        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound"),
-    };
-
-    format!("Declaration of method specification '{method_name}' for interface '{interface}' failed: {cause}")
-}
-
-pub(crate) fn report_invalid_receiver_type_bound(method_name: &str, receiver_type: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
-    let cause = match error_cause {
-        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound of the receiver"),
-        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound of the receiver"),
-    };
-
-    format!("Declaration of method '{method_name}' for receiver type '{receiver_type}' failed: {cause}")
-}
-
-pub(crate) fn report_invalid_method_type_bound(method_name: &str, receiver_type: &str, actual_type: &str, type_parameter: &str, error_cause: TypeBoundError) -> String {
-    let cause = match error_cause {
-        TypeBoundError::StructType => format!("Got struct type '{actual_type}' for type parameter '{type_parameter}' in type bound of the method"),
-        TypeBoundError::UnknownType => format!("Got unknown type '{actual_type}' for type parameter '{type_parameter}' in type bound of the method"),
-    };
-
-    format!("Declaration of method '{method_name}' for receiver type '{receiver_type}' failed: {cause}")
-}
-
 pub(crate) enum TypeDeclarationError {
     DuplicateFieldStruct,
     DuplicateMethodInterface,
@@ -82,14 +41,14 @@ pub(crate) fn report_duplicate_method_parameter(receiver_type: &str, method_name
 }
 
 pub(crate) enum CheckEnvironment {
-    Struct,
     MethodSpec,
     Method,
+    Literal,
 }
 
 pub(crate) fn report_unknown_type(environment_name: &str, type_name: &str, check_environment: &CheckEnvironment) -> String {
     let cause = match check_environment {
-        CheckEnvironment::Struct => format!("It is unknown in struct type '{environment_name}'"),
+        CheckEnvironment::Literal => format!("It is unknown in type literal '{environment_name}'"),
         CheckEnvironment::MethodSpec => format!("It is unknown in method specification '{environment_name}'"),
         CheckEnvironment::Method => format!("It is unknown in method declaration '{environment_name}'"),
     };
@@ -97,9 +56,9 @@ pub(crate) fn report_unknown_type(environment_name: &str, type_name: &str, check
     format!("Checking of type '{type_name}' failed: {cause}")
 }
 
-pub(crate) fn report_invalid_type_parameter(environment_name: &str, type_parameter: &str, check_environment: &CheckEnvironment) -> String {
+pub(crate) fn report_unknown_type_parameter(environment_name: &str, type_parameter: &str, check_environment: &CheckEnvironment) -> String {
     let cause = match check_environment {
-        CheckEnvironment::Struct => format!("It is unknown in struct type '{environment_name}'"),
+        CheckEnvironment::Literal => format!("It is unknown in type literal '{environment_name}'"),
         CheckEnvironment::MethodSpec => format!("It is unknown in method specification '{environment_name}'"),
         CheckEnvironment::Method => format!("It is unknown in method declaration '{environment_name}'"),
     };
@@ -121,10 +80,6 @@ pub(crate) fn report_invalid_method_call_number(method_name: &str) -> String {
 
 pub(crate) fn report_invalid_method_call_not_implemented(method_name: &str, called_method: &str, receiver_type: &str) -> String {
     format!("Checking of body expression of method '{method_name}' failed: Called method '{called_method}' is not implemented for receiver type '{receiver_type}'")
-}
-
-pub(crate) fn report_invalid_struct_literal_arg_count_mismatch(method_name: &str, struct_name: &str, expected: usize, actual: usize) -> String {
-    format!("Checking of body expression of method '{method_name}' failed: Struct type '{struct_name}' has '{expected}' fields but '{actual}' fields were provided")
 }
 
 pub(crate) enum StructLiteralError {
@@ -149,8 +104,8 @@ pub(crate) fn report_invalid_select_interface(method_name: &str, type_name: &str
     format!("Checking of body expression of method '{method_name}' failed: Expression evaluates to an interface type '{type_name}' on which no select can be made")
 }
 
-pub(crate) fn report_invalid_assert_type_mismatch(method_name: &str, asserted_type: &str, assertion_type: &str) -> String {
-    format!("Checking of body expression of method '{method_name}' failed: Expression evaluates to type '{asserted_type}' but the assertion requires it to be of type '{assertion_type}'")
+pub(crate) fn report_invalid_assert_type_interface(method_name: &str, asserted_type: &str, assertion_type: &str) -> String {
+    format!("Checking of body expression of method '{method_name}' failed: Tried to assert interface type '{assertion_type}' on expression type '{asserted_type}'")
 }
 
 pub(crate) enum BinOpError {
@@ -217,10 +172,10 @@ pub(crate) fn report_invalid_type_bound_arg_mismatch(type_name: &str, expected: 
     format!("Checking type bound of type {type_name} failed: The declared type has '{expected}' type parameters but '{actual}' type parameters were provided")
 }
 
-pub(crate) fn report_invalid_type_bound_method_arg_mismatch(method_name: &str, expected: usize, actual: usize) -> String {
-    format!("Checking type bound of method '{method_name}' failed: The declared method has '{expected}' type parameters but '{actual}' type parameters were provided")
-}
-
 pub(crate) fn report_duplicate_type_formal(surrounding_type: &str, type_parameter: &str) -> String {
     format!("Checking the concatenated type environment of type '{surrounding_type}' failed: Encountered duplicate type parameter '{type_parameter}'")
+}
+
+pub(crate) fn report_invalid_type_parameter(surrounding_type: &str, type_parameter: &str, actual_type: &str) -> String {
+    format!("Checking type parameter '{type_parameter}' inside type '{surrounding_type}' failed: Type parameter is of type '{actual_type}' which is a struct type")
 }
