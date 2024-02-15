@@ -100,7 +100,7 @@ pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, type_infos: &Typ
         declaration_well_formed(declaration, type_infos)?;
     }
 
-    // body expression well-formed in the empty type environment and empty environment?
+    // body expression well-formed in the empty type environment and empty variable environment?
     expression_well_formed(&program.expression, &mut HashMap::new(), &HashMap::new(), type_infos, "main")
 }
 
@@ -216,15 +216,18 @@ fn nested_type_formals_well_formed<'a>(
         concat_environment.insert(*name, type_.clone());
     }
 
-    // types of the inner environment well-formed in the outer environment?
     for (name, type_) in inner_environment.iter() {
-        type_well_formed(type_, outer_environment, type_infos, surrounding_type, check_environment)?;
-
         // name of type parameter unique?
         match concat_environment.insert(*name, type_.clone()) {
             Some(_) => return Err(TypeError { message: report_duplicate_type_formal(surrounding_type, name) }),
             None => continue,
         }
+    }
+
+    // TODO
+    // types of the inner environment well-formed in the concatenated environment?
+    for (_, type_) in inner_environment.iter() {
+        type_well_formed(type_, outer_environment, type_infos, surrounding_type, check_environment)?;
     }
 
     Ok(concat_environment)
@@ -321,6 +324,7 @@ fn type_well_formed(
                     match type_infos.get(type_.name()) {
                         None => Err(TypeError { message: report_unknown_type(surrounding_type, type_.name(), check_environment) }),
                         Some(type_info) => {
+                            // only interface types can be type parameters
                             match type_info {
                                 TypeInfo::Struct { .. } => Err(TypeError { message: report_invalid_type_parameter(surrounding_type, type_parameter, type_.name()) }),
                                 TypeInfo::Interface { .. } => Ok(())
@@ -332,8 +336,8 @@ fn type_well_formed(
         }
         GenericType::NamedType(type_name, instantiation) => {
             // instantiation types well-formed?
-            for type_ in instantiation {
-                type_well_formed(type_, type_environment, type_infos, surrounding_type, check_environment)?;
+            for instantiated_type in instantiation {
+                type_well_formed(instantiated_type, type_environment, type_infos, surrounding_type, check_environment)?;
             }
 
             // instantiated types satisfy type bounds of type formals?
