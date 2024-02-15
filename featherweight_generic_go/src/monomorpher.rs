@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
 use parser::{Expression, GenericType};
-use type_checker::{check_expression, TypeEnvironment, TypeError, TypeInfos, VariableEnvironment};
+use type_checker::{expression_well_formed, TypeEnvironment, TypeError, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum InstanceType<'a> {
@@ -35,7 +35,7 @@ fn instance_set_of<'a>(
             let mut method_instance_set = HashSet::new();
 
             // add instance type of method to set
-            let expression_type = check_expression(expression, variable_environment, type_environment, type_infos, method)?;
+            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method)?;
             let method_expression_type = InstanceType::Type { type_: expression_type.clone() };
             method_instance_set.insert(method_expression_type);
 

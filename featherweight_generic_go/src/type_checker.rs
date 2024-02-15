@@ -31,37 +31,18 @@ pub(crate) enum TypeInfo<'a> {
     },
 }
 
-impl<'a> TypeInfo<'a> {
-    fn method_specification(&self, method_name: &'a str) -> Option<&'a MethodSpecification<'a>> {
-        match self {
-            TypeInfo::Struct { methods, .. } => methods.get(method_name).map(|method| &method.specification),
-            TypeInfo::Interface { methods, .. } => methods.iter().find(|method| method.name == method_name),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct TypeError {
     pub(crate) message: String,
 }
 
-/*
-    Creates info for types
-
-        Struct:
-            - type formals (bound)
-            - fields
-            - implemented methods for that type
-        Interface:
-            - type formals (bound)
-            - method specifications
- */
 pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, TypeError> {
     let mut type_infos = HashMap::new();
 
-    // collect type metadata for type declarations
+    // collect info for type declarations
     for declaration in &program.declarations {
         if let Declaration::Type { name: type_name, bound, literal } = declaration {
+            // type with this name already declared?
             if type_infos.contains_key(type_name) {
                 return Err(TypeError { message: report_duplicate_type_declaration(type_name) });
             } else {
@@ -75,7 +56,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
         }
     }
 
-    // collect metadata for method declarations
+    // collect info for method declarations
     for declaration in &program.declarations {
         if let Declaration::Method(method) = declaration {
             match type_infos.get_mut(method.receiver.type_) {
@@ -113,72 +94,51 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
     Ok(type_infos)
 }
 
-/*
-    Checks if program P is well-formed
-
-        - all type declarations are distinct
-        - all method declarations are distinct
-        - all declarations are well-formed
-        - body expression well-formed in the empty context
- */
-pub(crate) fn check_program<'a>(program: &'a Program<'a>, type_infos: &TypeInfos<'a>) -> Result<GenericType<'a>, TypeError> {
+pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, type_infos: &TypeInfos<'a>) -> Result<GenericType<'a>, TypeError> {
     // declarations well-formed?
     for declaration in &program.declarations {
-        check_declaration(declaration, type_infos)?;
+        declaration_well_formed(declaration, type_infos)?;
     }
 
     // body expression well-formed in the empty type environment and empty environment?
-    check_expression(&program.expression, &mut HashMap::new(), &HashMap::new(), type_infos, "main")
+    expression_well_formed(&program.expression, &mut HashMap::new(), &HashMap::new(), type_infos, "main")
 }
 
-/*
-    Checks if declaration D is well-formed
-
-        - type declaration is well-formed
-        - method declaration is well-formed
- */
-fn check_declaration(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match declaration {
+        // method declaration well-formed?
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => method_well_formed(receiver, specification, body, type_infos)?,
+        // type declaration well-formed?
         Declaration::Type { name, bound, literal } => {
             let mut literal_environment = HashMap::new();
 
+            // build environment for type formals of literal
             for binding in bound.iter() {
-                check_type(&binding.type_, &literal_environment, type_infos, name, &CheckEnvironment::Literal)?;
+                type_well_formed(&binding.type_, &literal_environment, type_infos, name, &CheckEnvironment::Literal)?;
 
                 literal_environment.insert(binding.name, binding.type_.clone());
             }
 
-            check_type_literal(name, literal, &literal_environment, type_infos)?
+            // type literal well-formed?
+            literal_well_formed(name, literal, &literal_environment, type_infos)?
         }
-        Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, type_infos)?,
     }
 
     Ok(())
 }
 
-/*
-    Checks if type literal T is well-formed
-
-        - type formals well-formed in the empty type environment
-        - literal well-formed in the type formals environment
-
-        Struct:
-            - all field names are distinct
-            - all field types well-formed in the literal environment
-        Interface:
-            - all its method specifications are well-formed in the literal environment
-            - all method names are unique
- */
-fn check_type_literal(literal_name: &str, literal: &TypeLiteral, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn literal_well_formed(literal_name: &str, literal: &TypeLiteral, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match literal {
-        TypeLiteral::Struct { fields } => check_struct(literal_name, fields, literal_environment, type_infos)?,
-        TypeLiteral::Interface { methods } => check_interface(literal_name, methods, literal_environment, type_infos)?,
+        // struct literal well-formed?
+        TypeLiteral::Struct { fields } => struct_well_formed(literal_name, fields, literal_environment, type_infos)?,
+        // interface literal well-formed?
+        TypeLiteral::Interface { methods } => interface_well_formed(literal_name, methods, literal_environment, type_infos)?,
     }
 
     Ok(())
 }
 
-fn check_struct(struct_name: &str, fields: &[GenericBinding], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn struct_well_formed(struct_name: &str, fields: &[GenericBinding], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     for (index, field) in fields.iter().enumerate() {
         // field names distinct?
         if fields.iter().skip(index + 1).any(|binding| binding.name == field.name) {
@@ -187,61 +147,60 @@ fn check_struct(struct_name: &str, fields: &[GenericBinding], type_environment: 
         }
 
         // field type well-formed in the literal environment?
-        check_type(&field.type_, type_environment, type_infos, struct_name, &CheckEnvironment::Literal)?;
+        type_well_formed(&field.type_, type_environment, type_infos, struct_name, &CheckEnvironment::Literal)?;
     }
 
     Ok(())
 }
 
-fn check_interface(interface_name: &str, methods: &[MethodSpecification], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn interface_well_formed(interface_name: &str, methods: &[MethodSpecification], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     for (index, method_specification) in methods.iter().enumerate() {
-        // method names unique?
+        // name of method specification unique?
         if methods.iter().skip(index + 1).any(|method_spec| method_spec.name == method_specification.name) {
             let error_msg = report_duplicate_literal_parameter(method_specification.name, interface_name, TypeDeclarationError::DuplicateMethodInterface);
             return Err(TypeError { message: error_msg });
         }
 
         // method specification well-formed in the literal environment?
-        check_method_specification(interface_name, method_specification, type_environment, type_infos)?;
+        method_specification_well_formed(interface_name, method_specification, type_environment, type_infos)?;
     }
 
     Ok(())
 }
 
-/*
-    Checks if method specification S is well-formed
-
-        - all method parameter names are distinct
-        - all method parameter types are well-formed in the concatenated environment
-        - return type is well-formed in the concatenated environment
- */
-fn check_method_specification(interface_name: &str, specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
-    // create environment for method type formals
+fn method_specification_well_formed(
+    interface_name: &str,
+    specification: &MethodSpecification,
+    literal_environment: &TypeEnvironment,
+    type_infos: &TypeInfos
+) -> Result<(), TypeError> {
+    // build environment for type formals of method specification
     let mut method_environment = HashMap::new();
 
     for binding in &specification.bound {
         method_environment.insert(binding.name, binding.type_.clone());
     }
 
-    let type_environment = check_nested_type_formals(literal_environment, &method_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
+    // concatenate type environment of literal and method
+    let type_environment = nested_type_formals_well_formed(literal_environment, &method_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
 
     for (index, parameter) in specification.parameters.iter().enumerate() {
-        // parameter names distinct?
+        // name of method parameter distinct?
         if specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
             return Err(TypeError { message: report_duplicate_method_spec_parameter(specification.name, interface_name, parameter.name) });
         }
 
         // parameter type well-formed in the concatenated environment?
-        check_type(&parameter.type_, &type_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
+        type_well_formed(&parameter.type_, &type_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
     }
 
     // return type well-formed in the concatenated environment?
-    check_type(&specification.return_type, &type_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
+    type_well_formed(&specification.return_type, &type_environment, type_infos, interface_name, &CheckEnvironment::MethodSpec)?;
 
     Ok(())
 }
 
-fn check_nested_type_formals<'a>(
+fn nested_type_formals_well_formed<'a>(
     outer_environment: &TypeEnvironment<'a>,
     inner_environment: &TypeEnvironment<'a>,
     type_infos: &TypeInfos,
@@ -250,17 +209,18 @@ fn check_nested_type_formals<'a>(
 ) -> Result<TypeEnvironment<'a>, TypeError> {
     let mut concat_environment = HashMap::new();
 
-    // types in the outer environment well-formed in the empty environment?
+    // types of the outer environment well-formed in the empty environment?
     for (name, type_) in outer_environment.iter() {
-        check_type(type_, &HashMap::new(), type_infos, surrounding_type, check_environment)?;
+        type_well_formed(type_, &HashMap::new(), type_infos, surrounding_type, check_environment)?;
 
         concat_environment.insert(*name, type_.clone());
     }
 
-    // types in the inner environment well-formed in the outer environment?
+    // types of the inner environment well-formed in the outer environment?
     for (name, type_) in inner_environment.iter() {
-        check_type(type_, outer_environment, type_infos, surrounding_type, check_environment)?;
+        type_well_formed(type_, outer_environment, type_infos, surrounding_type, check_environment)?;
 
+        // name of type parameter unique?
         match concat_environment.insert(*name, type_.clone()) {
             Some(_) => return Err(TypeError { message: report_duplicate_type_formal(surrounding_type, name) }),
             None => continue,
@@ -270,20 +230,9 @@ fn check_nested_type_formals<'a>(
     Ok(concat_environment)
 }
 
-/*
-    Checks if a method declaration is well-formed
-
-        - receiver and method parameter names are distinct
-        - receiver type well-formed
-        - type formals of the receiver type subtype of the type declaration
-        - method parameter types well-formed in the concatenated environment
-        - return type well-formed in the concatenated environment
-        - body expression well-formed in the concatenated environment
-        - body expression type is subtype of the return type
- */
-fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
     for (index, parameter) in specification.parameters.iter().enumerate() {
-        // receiver name and parameter names distinct?
+        // name of receiver type and parameter distinct?
         if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|binding| binding.name == parameter.name) {
             return Err(TypeError { message: report_duplicate_method_parameter(receiver.type_, specification.name, parameter.name) });
         }
@@ -292,10 +241,10 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     // receiver type declared?
     match type_infos.get(receiver.type_) {
         Some(_) => {
-            // collect receiver type formals
+            // build environment for type formals of receiver type
             let mut receiver_environment = HashMap::new();
 
-            // keep track of bound types
+            // keep track of instantiated types
             let mut instantiated_types = Vec::new();
 
             for binding in &receiver.instantiation {
@@ -304,26 +253,27 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
                 instantiated_types.push(binding.type_.clone());
             }
 
+            // create receiver type with instantiated types
             let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
 
-            // collect method type formals
+            // build environment for type formals of method
             let mut method_environment = HashMap::new();
-
             for binding in &specification.bound {
                 method_environment.insert(binding.name, binding.type_.clone());
             }
 
-            let type_environment = check_nested_type_formals(&receiver_environment, &method_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
+            // concatenate environment of receiver type and method
+            let type_environment = nested_type_formals_well_formed(&receiver_environment, &method_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
 
             // parameter types well-formed in the concatenated environment?
             for parameter in &specification.parameters {
-                check_type(&parameter.type_, &type_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
+                type_well_formed(&parameter.type_, &type_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
             }
 
             // return-type well-formed in the concatenated environment??
-            check_type(&specification.return_type, &type_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
+            type_well_formed(&specification.return_type, &type_environment, type_infos, specification.name, &CheckEnvironment::Method)?;
 
-            // create an environment for the variables
+            // create environment for method parameters
             let mut variable_environment = HashMap::new();
 
             variable_environment.insert(receiver.name, receiver_type);
@@ -333,9 +283,9 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
             }
 
             // body expression well-formed in the concatenated environment?
-            let expression_type = check_expression(body, &mut variable_environment, &type_environment, type_infos, specification.name)?;
+            let expression_type = expression_well_formed(body, &mut variable_environment, &type_environment, type_infos, specification.name)?;
 
-            // type of body expression subtype of return type in the concatenated environment?
+            // body expression subtype of return type in the concatenated environment?
             match is_subtype_of(&expression_type, &specification.return_type, &type_environment, type_infos) {
                 Ok(_) => Ok(()),
                 Err(error) => {
@@ -355,13 +305,7 @@ fn check_method(receiver: &GenericReceiver, specification: &MethodSpecification,
     }
 }
 
-/*
-    Checks if type t is well-formed
-
-        - all type parameters must be declared in its environment
-        - all named types must be instantiated with type arguments that satisfy its bounds
-*/
-fn check_type(
+fn type_well_formed(
     type_: &GenericType,
     type_environment: &TypeEnvironment,
     type_infos: &TypeInfos,
@@ -370,17 +314,14 @@ fn check_type(
 ) -> Result<(), TypeError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
-            // type parameter declared?
+            // type parameter declared in its environment?
             return match type_environment.get(type_parameter) {
-                // type parameter is not declared in current environment
                 None => Err(TypeError { message: report_unknown_type_parameter(surrounding_type, type_parameter, check_environment) }),
                 Some(type_) => {
                     match type_infos.get(type_.name()) {
-                        // type parameter is not declared in current environment
                         None => Err(TypeError { message: report_unknown_type(surrounding_type, type_.name(), check_environment) }),
                         Some(type_info) => {
                             match type_info {
-                                // type parameter is a struct type
                                 TypeInfo::Struct { .. } => Err(TypeError { message: report_invalid_type_parameter(surrounding_type, type_parameter, type_.name()) }),
                                 TypeInfo::Interface { .. } => Ok(())
                             }
@@ -390,12 +331,12 @@ fn check_type(
             };
         }
         GenericType::NamedType(type_name, instantiation) => {
-            // type actual well-formed?
+            // instantiation types well-formed?
             for type_ in instantiation {
-                check_type(type_, type_environment, type_infos, surrounding_type, check_environment)?;
+                type_well_formed(type_, type_environment, type_infos, surrounding_type, check_environment)?;
             }
 
-            // type declared?
+            // instantiated types satisfy type bounds of type formals?
             match type_infos.get(type_name) {
                 None => return Err(TypeError { message: report_unknown_type(surrounding_type, type_name, check_environment) }),
                 Some(type_info) => {
@@ -425,45 +366,20 @@ fn substitute_type_formals<'a>(
         return Err(TypeError { message: report_invalid_type_bound_arg_mismatch(type_name, type_formal.len(), instantiation.len()) });
     }
 
+    // substitute type formals with type actuals and check bound
     for (index, formal_type) in type_formal.iter().enumerate() {
         let actual_type = instantiation.get(index).unwrap();
 
         // actual type subtype of formal type?
         is_subtype_of(actual_type, &formal_type.type_, &substituted_environment, type_infos)?;
 
-        // substitute type formals with type actuals and check bound
         substituted_environment.insert(formal_type.name, actual_type.clone());
     }
 
     Ok(substituted_environment)
 }
 
-/*
-    Checks if expression e is well-formed
-
-        Variable:
-            - variable known in the environment
-        Method call:
-            - method is implemented for type of body expression
-            - body expression and parameter expressions well-formed
-            - parameter expression subtype from method parameter type
-        Struct literal:
-            - struct type well-formed in its environment
-            - all field values provided
-            - each field expression is a subtype of its field type
-        Select:
-            - expression is a struct type
-            - selected field is part of the expression type
-        Type assertion:
-            - asserted type well-formed in its environment
-            - expression subtype of asserted type
-        Number:
-            - no prerequisites
-        BinOp:
-            - left side of operation is a number type
-            - right side of operation is a number type
- */
-pub(crate) fn check_expression<'a>(
+pub(crate) fn expression_well_formed<'a>(
     expression: &'a Expression<'a>,
     variable_environment: &mut VariableEnvironment<'a>,
     type_environment: &TypeEnvironment<'a>,
@@ -472,14 +388,14 @@ pub(crate) fn check_expression<'a>(
 ) -> Result<GenericType<'a>, TypeError> {
     match expression {
         Expression::Variable { name: variable_name } => {
-            // variable known?
+            // variable declared in environment?
             match variable_environment.get(variable_name) {
                 Some(var_type) => Ok(var_type.clone()),
                 None => Err(TypeError { message: report_invalid_variable(method_name, variable_name) })
             }
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
-            let expression_type = check_expression(expression, variable_environment, type_environment, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
             let type_info = match expression_type {
                 GenericType::TypeParameter(type_parameter) => {
@@ -510,7 +426,7 @@ pub(crate) fn check_expression<'a>(
                             }
 
                             for (index, expression) in parameter_expressions.iter().enumerate() {
-                                let expression_type = check_expression(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
+                                let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
                                 let parameter = declaration.specification.parameters.get(index).unwrap();
 
                                 variable_environment.insert(parameter.name, expression_type);
@@ -558,7 +474,7 @@ pub(crate) fn check_expression<'a>(
                             }
 
                             for (index, expression) in parameter_expressions.iter().enumerate() {
-                                let expression_type = check_expression(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
+                                let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
                                 let parameter = declaration.parameters.get(index).unwrap();
 
                                 variable_environment.insert(parameter.name, expression_type);
@@ -593,7 +509,7 @@ pub(crate) fn check_expression<'a>(
             let struct_type = GenericType::NamedType(name, instantiation.clone());
 
             // struct type well-formed?
-            check_type(&struct_type, type_environment, type_infos, method_name, &CheckEnvironment::Method)?;
+            type_well_formed(&struct_type, type_environment, type_infos, method_name, &CheckEnvironment::Method)?;
 
             match type_infos.get(name) {
                 Some(type_info) => {
@@ -605,7 +521,7 @@ pub(crate) fn check_expression<'a>(
                             for (index, expression) in field_expressions.iter().enumerate() {
                                 if let Some(field) = fields.get(index) {
                                     // evaluate type of supplied parameter
-                                    let field_type = check_expression(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
+                                    let field_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
 
                                     // field expression subtype of field type?
                                     match is_subtype_of(&field_type, &field.type_, &substituted_environment, type_infos) {
@@ -629,7 +545,7 @@ pub(crate) fn check_expression<'a>(
             }
         }
         Expression::Select { expression, field: field_var } => {
-            let expression_type = check_expression(expression, variable_environment, type_environment, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
             match type_infos.get(expression_type.name()).unwrap() {
                 TypeInfo::Struct { fields, .. } => {
@@ -644,7 +560,7 @@ pub(crate) fn check_expression<'a>(
         }
         Expression::TypeAssertion { expression, assert } => {
             // evaluate body expression
-            let expression_type = check_expression(expression, variable_environment, type_environment, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
             // get type info for expression type
             let expression_type_info = match type_infos.get(expression_type.name()) {
@@ -680,7 +596,7 @@ pub(crate) fn check_expression<'a>(
             let assert_type_info = type_infos.get(assert_type.name()).unwrap();
 
             // asserted type well-formed?
-            check_type(assert_type, type_environment, type_infos, method_name, &CheckEnvironment::Method)?;
+            type_well_formed(assert_type, type_environment, type_infos, method_name, &CheckEnvironment::Method)?;
 
             match (expression_type_info, assert_type_info) {
                 (TypeInfo::Interface { .. }, TypeInfo::Interface { .. }) => (),
@@ -699,10 +615,10 @@ pub(crate) fn check_expression<'a>(
         }
         Expression::BinOp { lhs, rhs, .. } => {
             // left side of operation number type?
-            let lhs_type = check_expression(lhs, variable_environment, type_environment, type_infos, method_name)?;
+            let lhs_type = expression_well_formed(lhs, variable_environment, type_environment, type_infos, method_name)?;
 
             // right side of operation number type?
-            let rhs_type = check_expression(rhs, variable_environment, type_environment, type_infos, method_name)?;
+            let rhs_type = expression_well_formed(rhs, variable_environment, type_environment, type_infos, method_name)?;
 
             match (lhs_type, rhs_type) {
                 // OK
@@ -764,7 +680,12 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
                 }
                 (TypeInfo::Struct { .. }, TypeInfo::Interface { methods, .. }) => {
                     for method in methods.iter() {
-                        match child_type_info.method_specification(method.name) {
+                        let method_spec = match child_type_info {
+                            TypeInfo::Struct { methods, .. } => methods.get(method.name).map(|method_decl| &method_decl.specification),
+                            TypeInfo::Interface { methods, .. } => methods.iter().find(|method_spec| method_spec.name == method.name),
+                        };
+
+                        match method_spec {
                             None => {
                                 return Err(TypeError { message: report_method_not_implemented(method.name, child_name, parent_name) });
                             }

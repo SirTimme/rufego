@@ -8,7 +8,7 @@ use monomorpher::monomorph;
 use parser::language::parse;
 use parser::{Expression, Program};
 use token::{LexerError, Token};
-use type_checker::{create_type_infos, check_program, TypeInfo, TypeInfos};
+use type_checker::{create_type_infos, program_well_formed, TypeInfo, TypeInfos};
 
 mod token;
 mod parser;
@@ -44,19 +44,19 @@ fn parse_tokens(tokens: &[Token]) {
 
 fn build_type_infos(program: &Program) {
     match create_type_infos(program) {
-        Ok(type_infos) => typecheck_program(program, &type_infos),
+        Ok(type_infos) => check_program(program, &type_infos),
         Err(error) => eprintln!("{}", error.message),
     }
 }
 
-fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
-    match check_program(program, type_infos) {
-        Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
+fn check_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
+    match program_well_formed(program, type_infos) {
+        Ok(_) => run_program(&program.expression, &HashMap::new(), type_infos),
         Err(error) => eprintln!("{}", error.message),
     }
 }
 
-fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
+fn run_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, type_infos) {
         Ok(value) => {
             println!("Result: {:?}", value);
