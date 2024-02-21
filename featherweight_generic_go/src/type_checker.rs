@@ -5,9 +5,9 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 // TODO Self recursion in struct
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
 // TODO Distinct Check Parameter name und Type parameter?
-// TODO substitution not only in method call?
 // TODO subtyping 2 Interfaces
 // TODO subtyping mit 2 type parameters?
+// TODO type parameter return value method
 
 // Type name -> Type Info
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
@@ -400,7 +400,7 @@ pub(crate) fn expression_well_formed<'a>(
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
-
+            
             let type_info = match expression_type {
                 GenericType::TypeParameter(type_parameter) => {
                     let actual_type = type_environment.get(type_parameter).unwrap();

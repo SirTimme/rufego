@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
 use parser::{Expression, GenericType};
-use type_checker::{expression_well_formed, TypeEnvironment, TypeError, TypeInfos, VariableEnvironment};
+use type_checker::{expression_well_formed, TypeEnvironment, TypeError, TypeInfo, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum InstanceType<'a> {
@@ -16,9 +16,19 @@ enum InstanceType<'a> {
 }
 
 pub(crate) fn monomorph(expression: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
-    let instance_set = instance_set_of(expression, &mut HashMap::new(), &mut HashMap::new(), type_infos)?;
+    let mut instance_set = instance_set_of(expression, &mut HashMap::new(), &HashMap::new(), type_infos)?;
 
-    apply_g_function(&instance_set)?;
+    loop {
+        let result = apply_g_function(&instance_set, type_infos)?;
+
+        if HashSet::is_empty(&result) {
+            break;
+        }
+
+        instance_set.extend(result);
+    }
+    
+    println!("{:#?}", instance_set);
 
     Ok(())
 }
@@ -26,7 +36,7 @@ pub(crate) fn monomorph(expression: &Expression, type_infos: &TypeInfos) -> Resu
 fn instance_set_of<'a>(
     expression: &'a Expression<'a>,
     variable_environment: &mut VariableEnvironment<'a>,
-    type_environment: &mut TypeEnvironment<'a>,
+    type_environment: &TypeEnvironment<'a>,
     type_infos: &TypeInfos<'a>,
 ) -> Result<HashSet<InstanceType<'a>>, TypeError> {
     match expression {
@@ -45,6 +55,7 @@ fn instance_set_of<'a>(
                 method_name: method,
                 type_arguments: instantiation.clone(),
             };
+
             method_instance_set.insert(method_instance_type);
 
             // add instance set of expression to set
@@ -96,7 +107,43 @@ fn instance_set_of<'a>(
     }
 }
 
-fn apply_g_function(instance_set: &HashSet<InstanceType>) -> Result<(), TypeError> {
-    println!("{:#?}", instance_set);
-    Ok(())
+fn apply_g_function<'a>(instance_set: &HashSet<InstanceType>, type_infos: &'a TypeInfos) -> Result<HashSet<InstanceType<'a>>, TypeError> {
+    let mut result_set = HashSet::new();
+
+    for element in instance_set {
+        let element_set = match element {
+            InstanceType::Type { type_ } => f_closure(type_, type_infos)?,
+            InstanceType::Method { .. } => HashSet::new(),
+        };
+
+        for result_element in element_set {
+            if !instance_set.contains(&result_element) {
+                result_set.insert(result_element);
+            }
+        }
+    }
+
+    Ok(result_set)
+}
+
+fn f_closure<'a>(type_: &GenericType, type_infos: &'a TypeInfos) -> Result<HashSet<InstanceType<'a>>, TypeError> {
+    let mut result_set = HashSet::new();
+
+    match type_ {
+        GenericType::NamedType(name, ..) => {
+            let type_info = type_infos.get(name).unwrap();
+
+            match type_info {
+                TypeInfo::Struct { fields, .. } => {
+                    for field in fields.iter() {
+                        result_set.insert(InstanceType::Type { type_: field.type_.clone() });
+                    }
+                }
+                TypeInfo::Interface { .. } => (),
+            }
+        }
+        _ => _ = result_set.insert(InstanceType::Type { type_: GenericType::NumberType }),
+    }
+
+    Ok(result_set)
 }
