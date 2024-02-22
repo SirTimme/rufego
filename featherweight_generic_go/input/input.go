@@ -18,10 +18,10 @@ func (this Triangle(type)) send(type)() int {
     return 1 + 1
 }
 
-func (this Triangle(type)) buildRectangle(type T Any())(param T) int {
-    return param.send()()
+func (this Triangle(type)) buildRectangle(type T Any())(param T) T {
+    return this
 }
 
 func main() {
-    _ = Triangle(){}.buildRectangle(Triangle())(Triangle(){ 15 })
+    _ = Triangle(){}.buildRectangle(Triangle())(Triangle(){}).buildRectangle(Triangle())(Triangle(){})
 }

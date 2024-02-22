@@ -111,6 +111,11 @@ fn apply_g_function<'a>(instance_set: &HashSet<InstanceType>, type_infos: &'a Ty
     let mut result_set = HashSet::new();
 
     for element in instance_set {
+        // apply f
+        // apply m 
+        // apply i 
+        // apply s
+        
         let element_set = match element {
             InstanceType::Type { type_ } => f_closure(type_, type_infos)?,
             InstanceType::Method { .. } => HashSet::new(),
