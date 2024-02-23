@@ -16,7 +16,10 @@ enum InstanceType<'a> {
 }
 
 pub(crate) fn monomorph(expression: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
-    let mut instance_set = instance_set_of(expression, &mut HashMap::new(), &HashMap::new(), type_infos)?;
+    let inital_variable_set = HashMap::new();
+    let initial_type_set = HashMap::new();
+    
+    let mut instance_set = instance_set_of(expression, &inital_variable_set, &initial_type_set, type_infos)?;
 
     loop {
         let result = apply_g_function(&instance_set, type_infos)?;
@@ -35,9 +38,9 @@ pub(crate) fn monomorph(expression: &Expression, type_infos: &TypeInfos) -> Resu
 
 fn instance_set_of<'a>(
     expression: &'a Expression<'a>,
-    variable_environment: &mut VariableEnvironment<'a>,
-    type_environment: &TypeEnvironment<'a>,
-    type_infos: &TypeInfos<'a>,
+    variable_environment: &'a VariableEnvironment,
+    type_environment: &'a TypeEnvironment,
+    type_infos: &'a TypeInfos<'a>,
 ) -> Result<HashSet<InstanceType<'a>>, TypeError> {
     match expression {
         Expression::Variable { .. } => Ok(HashSet::new()),

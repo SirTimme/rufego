@@ -1,4 +1,5 @@
 use std::collections::{HashMap};
+use std::fmt::format;
 use std::hash::Hash;
 use diagnostics::{MethodImplementationError, report_duplicate_method_spec_parameter, report_duplicate_type_declaration, report_invalid_method_receiver, report_unknown_type, report_duplicate_literal_parameter, TypeDeclarationError, report_duplicate_method_parameter, CheckEnvironment, report_invalid_variable, report_invalid_method_call_arg_count_mismatch, report_invalid_method_call_not_implemented, report_invalid_method_call_number, report_invalid_struct_literal, StructLiteralError, report_invalid_select_unknown_field, report_invalid_select_interface, report_invalid_bin_op, BinOpError, report_invalid_subtype_method, report_invalid_subtype_base, report_invalid_subtype_method_call, report_method_not_implemented, report_invalid_subtype_number, SubTypeNumberError, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch, report_invalid_type_bound_arg_mismatch, report_duplicate_type_formal, report_invalid_subtype_struct_literal, report_invalid_type_parameter, report_unknown_type_parameter, report_invalid_assert_type_interface};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
@@ -102,22 +103,24 @@ pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, type_infos: &Typ
     }
 
     // body expression well-formed in the empty type environment and empty variable environment?
-    expression_well_formed(&program.expression, &mut HashMap::new(), &HashMap::new(), type_infos, "main")
+    expression_well_formed(&program.expression, &HashMap::new(), &HashMap::new(), type_infos, "main")
 }
 
 fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match declaration {
         // method declaration well-formed?
-        Declaration::Method(MethodDeclaration { receiver, specification, body }) => method_well_formed(receiver, specification, body, type_infos)?,
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
+            method_well_formed(receiver, specification, body, type_infos)?
+        }
         // type declaration well-formed?
         Declaration::Type { name, bound, literal } => {
             let mut psi = HashMap::new();
-            
+
             // build environment for type formals of literal
             for binding in bound.iter() {
                 psi.insert(binding.name, binding.type_.clone());
             }
-            
+
             let _ = formal_type_well_formed(&HashMap::new(), &psi, type_infos, name, &CheckEnvironment::Literal)?;
 
             // type literal well-formed?
@@ -130,9 +133,7 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
 
 fn literal_well_formed(literal_name: &str, literal: &TypeLiteral, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match literal {
-        // struct literal well-formed?
         TypeLiteral::Struct { fields } => struct_well_formed(literal_name, fields, literal_environment, type_infos)?,
-        // interface literal well-formed?
         TypeLiteral::Interface { methods } => interface_well_formed(literal_name, methods, literal_environment, type_infos)?,
     }
 
@@ -201,49 +202,6 @@ fn method_specification_well_formed(
     Ok(())
 }
 
-fn formal_type_well_formed<'a>(
-    outer_environment: &TypeEnvironment<'a>,
-    inner_environment: &TypeEnvironment<'a>,
-    type_infos: &TypeInfos,
-    surrounding_type: &str,
-    check_environment: &CheckEnvironment,
-) -> Result<HashMap<&'a str, GenericType<'a>>, TypeError> {
-    let mut concat_environment = HashMap::new();
-
-    // types of the outer environment well-formed in the empty environment?
-    for (name, type_) in outer_environment.iter() {
-        concat_environment.insert(*name, type_.clone());
-    }
-
-    // types of the outer environment well-formed in the empty environment?
-    for (name, type_) in inner_environment.iter() {
-        // name of type parameter unique?
-        match concat_environment.insert(*name, type_.clone()) {
-            Some(_) => return Err(TypeError { message: String::from("Duplicate type parameter") }),
-            None => continue,
-        }
-    }
-
-    for (name, type_) in inner_environment.iter() {
-        type_well_formed(type_, &concat_environment, type_infos, surrounding_type, check_environment)?;
-    }
-
-    Ok(concat_environment)
-}
-
-fn nested_type_formals_well_formed<'a>(
-    outer_environment: &TypeEnvironment<'a>,
-    inner_environment: &TypeEnvironment<'a>,
-    type_infos: &TypeInfos,
-    surrounding_type: &str,
-    check_environment: &CheckEnvironment,
-) -> Result<TypeEnvironment<'a>, TypeError> {
-    let _ = formal_type_well_formed(&HashMap::new(), outer_environment, type_infos, surrounding_type, check_environment)?;
-    let delta = formal_type_well_formed(outer_environment, inner_environment, type_infos, surrounding_type, check_environment)?;
-    
-    Ok(delta)
-}
-
 fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // name of receiver type and parameter distinct?
@@ -264,7 +222,7 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
             for binding in &receiver.instantiation {
                 receiver_environment.insert(binding.name, binding.type_.clone());
 
-                instantiated_types.push(GenericType::TypeParameter(binding.name.clone()));
+                instantiated_types.push(GenericType::TypeParameter(binding.name));
             }
 
             // create receiver type with instantiated types
@@ -335,10 +293,7 @@ fn type_well_formed(
             };
         }
         GenericType::NamedType(type_name, instantiation) => {
-            // instantiation types well-formed?
-            for instantiated_type in instantiation {
-                type_well_formed(instantiated_type, type_environment, type_infos, surrounding_type, check_environment)?;
-            }
+            type_actual_well_formed(instantiation, type_environment, type_infos, surrounding_type, check_environment)?;
 
             // instantiated types satisfy type bounds of type formals?
             match type_infos.get(type_name) {
@@ -361,35 +316,94 @@ fn type_well_formed(
     Ok(())
 }
 
-fn generate_substitution<'a>(type_formals: &Vec<GenericBinding>, instantiation: &Vec<GenericType>, type_infos: &TypeInfos) -> Result<HashMap<&'a str, GenericType<'a>>, TypeError> {
+fn type_actual_well_formed(
+    instantiation: &Vec<GenericType>,
+    type_environment: &TypeEnvironment,
+    type_infos: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: &CheckEnvironment,
+) -> Result<(), TypeError> {
+    // instantiation types well-formed?
+    for instantiated_type in instantiation {
+        type_well_formed(instantiated_type, type_environment, type_infos, surrounding_type, check_environment)?;
+    }
+
+    Ok(())
+}
+
+fn nested_type_formals_well_formed<'a>(
+    outer: &TypeEnvironment<'a>,
+    inner: &TypeEnvironment<'a>,
+    type_infos: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: &CheckEnvironment,
+) -> Result<TypeEnvironment<'a>, TypeError> {
+    let _ = formal_type_well_formed(&HashMap::new(), outer, type_infos, surrounding_type, check_environment)?;
+    let delta = formal_type_well_formed(outer, inner, type_infos, surrounding_type, check_environment)?;
+
+    Ok(delta)
+}
+
+fn formal_type_well_formed<'a>(
+    outer: &TypeEnvironment<'a>,
+    inner: &TypeEnvironment<'a>,
+    type_infos: &TypeInfos,
+    surrounding_type: &str,
+    check_environment: &CheckEnvironment,
+) -> Result<HashMap<&'a str, GenericType<'a>>, TypeError> {
+    let mut concat_environment = HashMap::new();
+
+    // insert types of outer environment to concatenated type environment
+    for (name, type_) in outer.iter() {
+        concat_environment.insert(*name, type_.clone());
+    }
+
+    for (name, type_) in inner.iter() {
+        // duplicate type parameter names?
+        match concat_environment.insert(*name, type_.clone()) {
+            Some(_) => return Err(TypeError { message: String::from("Duplicate type parameter") }),
+            None => continue,
+        }
+    }
+
+    // types of the inner environment well-formed in the concatenated environment?
+    for type_ in inner.values() {
+        type_well_formed(type_, &concat_environment, type_infos, surrounding_type, check_environment)?;
+    }
+
+    Ok(concat_environment)
+}
+
+fn generate_substitution<'a, 'b>(type_formals: &'a Vec<GenericBinding<'b>>, instantiation: &'a Vec<GenericType<'b>>) -> Result<HashMap<&'a str, GenericType<'b>>, TypeError> {
     let mut generated_substitution = HashMap::new();
 
     // correct amount of type parameters supplied?
     if type_formals.len() != instantiation.len() {
-        return Err(TypeError { message: String::from("Wrong length of args") });
+        return Err(TypeError { message: format!("Type formals consists of '{}' parameters but '{}' parameters were provided", type_formals.len(), instantiation.len()) });
     }
 
     // substitute type formals with type actuals and check bound
     for (index, formal_type) in type_formals.iter().enumerate() {
         let actual_type = instantiation.get(index).unwrap();
-
         generated_substitution.insert(formal_type.name, actual_type.clone());
     }
 
     Ok(generated_substitution)
 }
 
-fn generate_substitution_with_bound_check<'a>(
-    type_formals: &Vec<GenericBinding>, 
-    instantiation: &Vec<GenericType>, 
-    type_environment: &TypeEnvironment, 
-    type_infos: &TypeInfos
-) -> Result<HashMap<&'a str, GenericType<'a>>, TypeError> {
-    let generated_substitution = generate_substitution(type_formals, instantiation, type_infos)?;
+fn generate_substitution_with_bound_check<'a, 'b>(
+    type_formals: &'a Vec<GenericBinding<'b>>,
+    instantiation: &'a Vec<GenericType<'b>>,
+    type_environment: &TypeEnvironment,
+    type_infos: &TypeInfos,
+) -> Result<HashMap<&'a str, GenericType<'b>>, TypeError> {
+    let generated_substitution = generate_substitution(type_formals, instantiation)?;
 
     for (index, actual_type) in instantiation.iter().enumerate() {
         let bound = &type_formals.get(index).unwrap().type_;
-        let bound = substitute_type_parameter(&generated_substitution, &bound)?;
+
+        // substitute type parameter with actual types
+        let bound = substitute_type_parameter(bound, &generated_substitution)?;
 
         is_subtype_of(actual_type, &bound, type_environment, type_infos)?;
     }
@@ -397,7 +411,7 @@ fn generate_substitution_with_bound_check<'a>(
     Ok(generated_substitution)
 }
 
-fn substitute_type_parameter<'a>(substitution: &HashMap<&'a str, GenericType>, type_: &GenericType) -> Result<GenericType<'a>, TypeError> {
+fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, substitution: &'a HashMap<&str, GenericType<'b>>) -> Result<GenericType<'b>, TypeError> {
     match type_ {
         GenericType::TypeParameter(type_name) => {
             match substitution.get(type_name) {
@@ -409,7 +423,7 @@ fn substitute_type_parameter<'a>(substitution: &HashMap<&'a str, GenericType>, t
             let mut substituted_instantiation = Vec::new();
 
             for instantiated_type in instantiation {
-                let substituted_type = substitute_type_parameter(substitution, instantiated_type)?;
+                let substituted_type = substitute_type_parameter(instantiated_type, substitution)?;
                 substituted_instantiation.push(substituted_type);
             }
 
@@ -437,117 +451,95 @@ pub(crate) fn expression_well_formed<'a>(
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
-            println!("{:#?}", expression_type);
-
-            let type_info = match expression_type {
-                GenericType::TypeParameter(type_parameter) => {
-                    let actual_type = type_environment.get(type_parameter).unwrap();
-                    type_infos.get(actual_type.name()).unwrap()
+            // 2 Times substitution?
+            
+            match expression_type {
+                GenericType::TypeParameter(_) => {
+                    todo!()
                 }
-                GenericType::NamedType(type_name, _) => type_infos.get(type_name).unwrap(),
-                GenericType::NumberType => return Err(TypeError { message: report_invalid_method_call_number(method_name) })
-            };
+                GenericType::NamedType(type_name, type_instantiation) => {
+                    match type_infos.get(type_name).unwrap() {
+                        TypeInfo::Struct { bound, methods, .. } => {
+                            match methods.get(method) {
+                                None => Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, type_name) }),
+                                Some(declaration) => {
+                                    // TODO verify again...
+                                    let method_spec_substitution = generate_substitution_with_bound_check(bound, &type_instantiation, type_environment, type_infos)?;
+                                    let substituted_method_specification = substitute_method_specification(&declaration.specification, &method_spec_substitution)?;
 
-            match type_info {
-                TypeInfo::Struct { methods, .. } => {
-                    match methods.get(method) {
-                        Some(declaration) => {
-                            let type_substitution = substitute_type_formals(method, &declaration.specification.bound, instantiation, type_infos)?;
+                                    let method_parameters_substitution = generate_substitution_with_bound_check(&declaration.specification.bound, instantiation, type_environment, type_infos)?;
 
-                            println!("{:#?}", type_substitution);
+                                    for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
+                                        let parameter_expression_type = expression_well_formed(parameter_expression, variable_environment, type_environment, type_infos, method_name)?;
+                                        let substituted_parameter_expression = substitute_type_parameter(&parameter_expression_type, &method_parameters_substitution)?;
 
-                            // correct amount of parameters supplied?
-                            if declaration.specification.parameters.len() != parameter_expressions.len() {
-                                let error_msg = report_invalid_method_call_arg_count_mismatch(
-                                    method_name,
-                                    expression_type.name(),
-                                    declaration.specification.name,
-                                    declaration.specification.parameters.len(),
-                                    parameter_expressions.len(),
-                                );
+                                        let substituted_method_spec_parameter = &substituted_method_specification.parameters.get(index).unwrap().type_;
 
-                                return Err(TypeError { message: error_msg });
-                            }
-                            // 
-                            // for (index, expression) in parameter_expressions.iter().enumerate() {
-                            //     let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
-                            //     let parameter = declaration.specification.parameters.get(index).unwrap();
-                            // 
-                            //     variable_environment.insert(parameter.name, expression_type);
-                            // }
-
-                            // does the types of the parameter expressions match the types of the method parameters?
-                            for parameter in declaration.specification.parameters.iter() {
-                                let parameter_type = variable_environment.get(parameter.name).unwrap();
-
-                                // is the supplied parameter expression subtype of the corresponding method parameter?
-                                match is_subtype_of(parameter_type, &parameter.type_, &type_substitution, type_infos) {
-                                    Ok(_) => (),
-                                    Err(error) => {
-                                        let outer_error = report_invalid_subtype_method_call(method, parameter.name, parameter.type_.name(), parameter_type.name());
-                                        let error_msg = format!("{} {}", error.message, outer_error);
-
-                                        return Err(TypeError { message: error_msg });
+                                        is_subtype_of(&substituted_parameter_expression, substituted_method_spec_parameter, type_environment, type_infos)?;
                                     }
+
+                                    Ok(substitute_type_parameter(&substituted_method_specification.return_type, &method_parameters_substitution)?)
                                 }
                             }
-
-                            Ok(declaration.specification.return_type.clone())
                         }
-                        None => {
-                            Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, expression_type.name()) })
+                        TypeInfo::Interface { bound, methods } => {
+                            todo!()
                         }
                     }
                 }
-                TypeInfo::Interface { methods, .. } => {
-                    match methods.iter().find(|method_specification| &method_specification.name == method) {
-                        Some(declaration) => {
-                            let substituted_environment = substitute_type_formals(method, &declaration.bound, instantiation, type_infos)?;
-
-                            // correct amount of parameters supplied?
-                            if declaration.parameters.len() != parameter_expressions.len() {
-                                let error_msg = report_invalid_method_call_arg_count_mismatch(
-                                    method_name,
-                                    expression_type.name(),
-                                    declaration.name,
-                                    declaration.parameters.len(),
-                                    parameter_expressions.len(),
-                                );
-
-                                return Err(TypeError { message: error_msg });
-                            }
-
-                            for (index, expression) in parameter_expressions.iter().enumerate() {
-                                let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
-                                let parameter = declaration.parameters.get(index).unwrap();
-
-                                variable_environment.insert(parameter.name, expression_type);
-                            }
-
-                            // does the types of the parameter expressions match the types of the method parameters?
-                            for parameter in declaration.parameters.iter() {
-                                let parameter_type = variable_environment.get(parameter.name).unwrap();
-
-                                // is the supplied parameter expression subtype of the corresponding method parameter?
-                                match is_subtype_of(parameter_type, &parameter.type_, &substituted_environment, type_infos) {
-                                    Ok(_) => (),
-                                    Err(error) => {
-                                        let base_error = report_invalid_subtype_base(parameter_type.name(), parameter_type.name());
-                                        let error_msg = format!("{} {}", base_error, error.message);
-
-                                        return Err(TypeError { message: error_msg });
-                                    }
-                                }
-                            }
-
-                            Ok(declaration.return_type.clone())
-                        }
-                        None => {
-                            Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, expression_type.name()) })
-                        }
-                    }
-                }
+                GenericType::NumberType => Err(TypeError { message: report_invalid_method_call_number(method_name) })
             }
+
+            //     }
+            //     TypeInfo::Interface { methods, .. } => {
+            //         match methods.iter().find(|method_specification| &method_specification.name == method) {
+            //             Some(declaration) => {
+            //                 let substituted_environment = substitute_type_formals(method, &declaration.bound, instantiation, type_infos)?;
+            //
+            //                 // correct amount of parameters supplied?
+            //                 if declaration.parameters.len() != parameter_expressions.len() {
+            //                     let error_msg = report_invalid_method_call_arg_count_mismatch(
+            //                         method_name,
+            //                         expression_type.name(),
+            //                         declaration.name,
+            //                         declaration.parameters.len(),
+            //                         parameter_expressions.len(),
+            //                     );
+            //
+            //                     return Err(TypeError { message: error_msg });
+            //                 }
+            //
+            //                 for (index, expression) in parameter_expressions.iter().enumerate() {
+            //                     let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
+            //                     let parameter = declaration.parameters.get(index).unwrap();
+            //
+            //                     variable_environment.insert(parameter.name, expression_type);
+            //                 }
+            //
+            //                 // does the types of the parameter expressions match the types of the method parameters?
+            //                 for parameter in declaration.parameters.iter() {
+            //                     let parameter_type = variable_environment.get(parameter.name).unwrap();
+            //
+            //                     // is the supplied parameter expression subtype of the corresponding method parameter?
+            //                     match is_subtype_of(parameter_type, &parameter.type_, &substituted_environment, type_infos) {
+            //                         Ok(_) => (),
+            //                         Err(error) => {
+            //                             let base_error = report_invalid_subtype_base(parameter_type.name(), parameter_type.name());
+            //                             let error_msg = format!("{} {}", base_error, error.message);
+            //
+            //                             return Err(TypeError { message: error_msg });
+            //                         }
+            //                     }
+            //                 }
+            //
+            //                 Ok(declaration.return_type.clone())
+            //             }
+            //             None => {
+            //                 Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, expression_type.name()) })
+            //             }
+            //         }
+            //     }
+            // }
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             let struct_type = GenericType::NamedType(name, instantiation.clone());
@@ -559,25 +551,26 @@ pub(crate) fn expression_well_formed<'a>(
                 Some(type_info) => {
                     match type_info {
                         TypeInfo::Struct { bound, fields, .. } => {
-                            // TODO order of preconditions?
-                            let substituted_environment = substitute_type_formals(name, bound, instantiation, type_infos)?;
+                            if fields.len() != field_expressions.len() {
+                                return Err(TypeError { message: format!("Expected {} fields but {} were provided", fields.len(), field_expressions.len()) });
+                            }
 
-                            for (index, expression) in field_expressions.iter().enumerate() {
-                                if let Some(field) = fields.get(index) {
-                                    // evaluate type of supplied parameter
-                                    let field_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
+                            let mut field_expression_types = Vec::new();
 
-                                    // field expression subtype of field type?
-                                    match is_subtype_of(&field_type, &field.type_, &substituted_environment, type_infos) {
-                                        Ok(_) => (),
-                                        Err(error) => {
-                                            let base_error = report_invalid_subtype_base(field_type.name(), field.type_.name());
-                                            let error_msg = format!("{} {}", base_error, error.message);
+                            // evaluate field expressions
+                            for expression in field_expressions.iter() {
+                                let field_expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
+                                field_expression_types.push(field_expression_type);
+                            }
 
-                                            return Err(TypeError { message: error_msg });
-                                        }
-                                    }
-                                }
+                            let substitution = generate_substitution(bound, instantiation)?;
+
+                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+
+                            for (index, substituted_field) in substituted_struct_fields.iter().enumerate() {
+                                let expression_type = field_expression_types.get(index).unwrap();
+
+                                is_subtype_of(expression_type, &substituted_field.type_, type_environment, type_infos)?;
                             }
 
                             Ok(struct_type)
@@ -591,22 +584,32 @@ pub(crate) fn expression_well_formed<'a>(
         Expression::Select { expression, field: field_var } => {
             let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
-            match type_infos.get(expression_type.name()).unwrap() {
-                TypeInfo::Struct { fields, .. } => {
-                    // selected field part of the struct type?
-                    match fields.iter().find(|field| &field.name == field_var) {
-                        Some(field) => Ok(field.type_.clone()),
-                        None => Err(TypeError { message: report_invalid_select_unknown_field(method_name, expression_type.name(), field_var) }),
+            match expression_type {
+                GenericType::NamedType(type_name, instantiation) => {
+                    match type_infos.get(type_name).unwrap() {
+                        TypeInfo::Struct { bound, fields, .. } => {
+                            let substitution = generate_substitution(bound, &instantiation)?;
+                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+
+                            for field_binding in &substituted_struct_fields {
+                                if &field_binding.name == field_var {
+                                    return Ok(field_binding.type_.clone());
+                                }
+                            }
+
+                            Err(TypeError { message: report_invalid_select_unknown_field(method_name, type_name, field_var) })
+                        }
+                        TypeInfo::Interface { .. } => Err(TypeError { message: report_invalid_select_interface(method_name, type_name) }),
                     }
                 }
-                TypeInfo::Interface { .. } => Err(TypeError { message: report_invalid_select_interface(method_name, expression_type.name()) }),
+                _ => Err(TypeError { message: String::from("Select-expression evaluated to a number type or type parameter which is forbidden") }),
             }
         }
         Expression::TypeAssertion { expression, assert } => {
             // evaluate body expression
             let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method_name)?;
 
-            // get type info for expression type
+            // // get type info for expression type
             let expression_type_info = match type_infos.get(expression_type.name()) {
                 None => {
                     match type_environment.get(assert.name()) {
@@ -665,38 +668,53 @@ pub(crate) fn expression_well_formed<'a>(
             let rhs_type = expression_well_formed(rhs, variable_environment, type_environment, type_infos, method_name)?;
 
             match (lhs_type, rhs_type) {
-                // OK
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
-                // LHS wrong
-                (GenericType::TypeParameter(type_parameter), GenericType::NumberType) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, type_parameter, GenericType::NumberType.name(), BinOpError::Lhs) })
-                }
-                (GenericType::NamedType(name, _), GenericType::NumberType) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, name, GenericType::NumberType.name(), BinOpError::Lhs) })
-                }
-                // RHS wrong
-                (GenericType::NumberType, GenericType::TypeParameter(type_parameter)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), type_parameter, BinOpError::Rhs) })
-                }
-                (GenericType::NumberType, GenericType::NamedType(name, _)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, GenericType::NumberType.name(), name, BinOpError::Rhs) })
-                }
-                // BOTH wrong
-                (GenericType::TypeParameter(lhs_type_parameter), GenericType::TypeParameter(rhs_type_parameter)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type_parameter, rhs_type_parameter, BinOpError::Both) })
-                }
-                (GenericType::NamedType(lhs_name, _), GenericType::NamedType(rhs_name, _)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_name, rhs_name, BinOpError::Both) })
-                }
-                (GenericType::TypeParameter(lhs_type), GenericType::NamedType(rhs_type, _)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
-                }
-                (GenericType::NamedType(lhs_type, _), GenericType::TypeParameter(rhs_type)) => {
-                    Err(TypeError { message: report_invalid_bin_op(method_name, lhs_type, rhs_type, BinOpError::Both) })
-                }
+                _ => Err(TypeError { message: String::from("Either LFS or RHS of a binary operation doesn't evaluate to a number type") })
             }
         }
     }
+}
+
+fn substitute_struct_fields<'a, 'b>(
+    substitution: &'a HashMap<&str, GenericType<'b>>,
+    fields: &'a [GenericBinding<'b>],
+) -> Result<Vec<GenericBinding<'b>>, TypeError> {
+    let mut substituted_fields = Vec::new();
+
+    for field_binding in fields.iter() {
+        let substituted_field_type = substitute_type_parameter(&field_binding.type_, substitution)?;
+        substituted_fields.push(GenericBinding { name: field_binding.name, type_: substituted_field_type });
+    }
+
+    Ok(substituted_fields)
+}
+
+fn substitute_method_specification<'a, 'b>(
+    method_specification: &'a MethodSpecification<'b>,
+    substitution: &'a HashMap<&str, GenericType<'b>>,
+) -> Result<MethodSpecification<'b>, TypeError> {
+    let mut substituted_bound = Vec::new();
+
+    for binding in &method_specification.bound {
+        let substituted_bound_parameter = substitute_type_parameter(&binding.type_, substitution)?;
+        substituted_bound.push(GenericBinding { name: binding.name, type_: substituted_bound_parameter });
+    }
+
+    let mut substituted_method_parameters = Vec::new();
+
+    for method_parameter in &method_specification.parameters {
+        let substituted_method_parameter = substitute_type_parameter(&method_parameter.type_, substitution)?;
+        substituted_method_parameters.push(GenericBinding { name: method_parameter.name, type_: substituted_method_parameter })
+    }
+
+    let substituted_return_type = substitute_type_parameter(&method_specification.return_type, substitution)?;
+
+    Ok(MethodSpecification {
+        name: method_specification.name,
+        bound: substituted_bound,
+        parameters: substituted_method_parameters,
+        return_type: substituted_return_type,
+    })
 }
 
 /*
@@ -795,9 +813,3 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
 
     Ok(())
 }
-
-// fn fields(type_: GenericType, instantiation: Vec<GenericType>, type_infos: &TypeInfos) -> Result<Vec<GenericBinding>, TypeError> {
-//     
-// }
-
-fn substitute_expression(expression: &Expression, substitution: TypeEnvironment) -> Result<Expression, TypeError> {}

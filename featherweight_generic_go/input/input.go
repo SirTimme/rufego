@@ -1,27 +1,36 @@
 package main;
 
-type Any(type) interface {
-    send(type)() int
+type All(type) interface {}
+
+type Any(type T All()) interface {
+    send(type)() T
 }
 
-type Rectangle(type) struct {
-    amount int
+type Rectangle(type V All(), R V) struct {
+    amount V
+    client R
 }
 
-type Triangle(type) struct {}
+type Triangle(type R Any(All())) struct {}
 
-func (this Rectangle(type)) send(type)() int {
-    return this.amount
+type Box(type) struct {}
+
+func (this Triangle(type R Any(All()))) send(type T All())(param T) T {
+    return param
 }
 
-func (this Triangle(type)) send(type)() int {
-    return 1 + 1
+func (this Rectangle(type V All(), R V)) send(type T All())(param T) T {
+    return param
 }
 
-func (this Triangle(type)) buildRectangle(type T Any())(param T) T {
-    return this
+func (this Rectangle(type V All(), R V)) test(type)(amount R) R {
+    return amount
+}
+
+func (this Box(type)) send(type)() int {
+    return 69
 }
 
 func main() {
-    _ = Triangle(){}.buildRectangle(Triangle())(Triangle(){}).buildRectangle(Triangle())(Triangle(){})
+    _ = Rectangle(Box(), Box()){ Box(){}, Box(){} }.test()(Box(){})
 }

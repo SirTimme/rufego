@@ -171,7 +171,7 @@ pub(crate) enum Expression<'a> {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MethodSpecification<'a> {
     pub(crate) name: &'a str,
     pub(crate) bound: Vec<GenericBinding<'a>>,
