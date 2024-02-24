@@ -280,19 +280,13 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
     }
 }
 
-fn type_well_formed(
-    type_: &GenericType,
-    type_environment: &TypeEnvironment,
-    type_infos: &TypeInfos,
-    surrounding_type: &str,
-    check_environment: &CheckEnvironment,
-) -> Result<(), TypeError> {
+fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &TypeInfos, surrounding_type: &str, check_environment: &CheckEnvironment) -> Result<(), TypeError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
-            type_parameter_well_formed(type_parameter, type_environment, surrounding_type, check_environment)?
+            type_parameter_well_formed(type_parameter, delta, surrounding_type, check_environment)?
         }
         GenericType::NamedType(type_name, instantiation) => {
-            type_actual_well_formed(instantiation, type_environment, type_infos, surrounding_type, check_environment)?;
+            type_actual_well_formed(instantiation, delta, type_infos, surrounding_type, check_environment)?;
 
             // instantiated types satisfy type bounds of type formals?
             match type_infos.get(type_name) {
@@ -300,10 +294,10 @@ fn type_well_formed(
                 Some(type_info) => {
                     match type_info {
                         TypeInfo::Struct { bound, .. } => {
-                            let _ = generate_substitution_with_bound_check(bound, instantiation, type_environment, type_infos)?;
+                            let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
                         }
                         TypeInfo::Interface { bound, .. } => {
-                            let _ = generate_substitution_with_bound_check(bound, instantiation, type_environment, type_infos)?;
+                            let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
                         }
                     }
                 }
@@ -398,7 +392,7 @@ pub(crate) fn expression_well_formed<'a>(
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos, method_name)?;
 
-            // 2 Times substitution?            
+            // TODO 2 Times substitution?            
             match expression_type {
                 GenericType::TypeParameter(_) => {
                     todo!()
@@ -733,10 +727,7 @@ fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, substitution: &
     }
 }
 
-pub(crate) fn substitute_struct_fields<'a, 'b>(
-    substitution: &'a SubstitutionMap<'b>,
-    fields: &'a [GenericBinding<'b>],
-) -> Result<Vec<GenericBinding<'b>>, TypeError> {
+pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap<'b>, fields: &'a [GenericBinding<'b>]) -> Result<Vec<GenericBinding<'b>>, TypeError> {
     let mut substituted_fields = Vec::new();
 
     for field_binding in fields.iter() {
@@ -747,10 +738,7 @@ pub(crate) fn substitute_struct_fields<'a, 'b>(
     Ok(substituted_fields)
 }
 
-fn substitute_method_specification<'a, 'b>(
-    method_specification: &'a MethodSpecification<'b>,
-    substitution: &'a SubstitutionMap<'b>,
-) -> Result<MethodSpecification<'b>, TypeError> {
+fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpecification<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<MethodSpecification<'b>, TypeError> {
     let mut substituted_bound = Vec::new();
 
     for binding in &method_specification.bound {
@@ -783,12 +771,12 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
         (GenericType::NumberType, GenericType::NumberType) => return Ok(()),
         (GenericType::TypeParameter(child_name), GenericType::TypeParameter(parent_name)) => {
             if child_name == parent_name {
-                return Ok(())
-            } 
+                return Ok(());
+            }
             let child_type = type_environment.get(child_name).unwrap();
             let parent_type = type_environment.get(parent_name).unwrap();
-            
-            return is_subtype_of(child_type, parent_type, type_environment, type_infos)
+
+            return is_subtype_of(child_type, parent_type, type_environment, type_infos);
         }
         (GenericType::NamedType(child_name, _), GenericType::NamedType(parent_name, _)) => {
             let child_type_info = type_infos.get(child_name).unwrap();
@@ -805,13 +793,13 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
                     for parent_method in parent_methods.iter() {
                         match child_methods.iter().find(|method_spec| method_spec.name == parent_method.name) {
                             None => {
-                                return Err(TypeError { message: format!("Interface type {child_name} is not a subtype of interface type {parent_name}: Missing implementation of method") })
+                                return Err(TypeError { message: format!("Interface type {child_name} is not a subtype of interface type {parent_name}: Missing implementation of method") });
                             }
                             Some(_) => continue,
                         }
                     }
 
-                    return Ok(())
+                    return Ok(());
                 }
                 (TypeInfo::Struct { .. }, TypeInfo::Interface { methods, .. }) => {
                     for method in methods.iter() {
@@ -872,6 +860,6 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
         }
         _ => return Err(TypeError { message: report_invalid_subtype_base(child_type.name(), parent_type.name()) })
     }
-    
+
     Ok(())
 }
