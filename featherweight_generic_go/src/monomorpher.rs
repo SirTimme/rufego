@@ -48,7 +48,7 @@ fn instance_set_of<'a>(
             let mut method_instance_set = HashSet::new();
 
             // add instance type of method to set
-            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos, method)?;
+            let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos)?;
             let method_expression_type = InstanceType::Type { type_: expression_type.clone() };
             method_instance_set.insert(method_expression_type);
 

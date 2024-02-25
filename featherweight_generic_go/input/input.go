@@ -15,6 +15,10 @@ type Flight(type) struct {
     amount int
 }
 
+func (this Flight(type)) send(type)() Flight() {
+    return Triangle(Flight()){ Flight() { 42 } }
+}
+
 func main() {
-    _ = Rectangle(Flight(), Triangle(Flight())){ Flight(){ 42 }, Triangle(Flight()){ Flight(){ 69 } } }.client
+    _ = Rectangle(Flight(), Triangle(Flight())){ Flight(){ 42 }, Triangle(Flight()){ Flight(){ 69 } } }.client.value.send()()
 }

@@ -31,7 +31,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                     let type_info = type_infos.get(name).unwrap();
 
                     match type_info {
-                        TypeInfo::Struct { bound, fields, methods } => {
+                        TypeInfo::Struct { bound, methods, .. } => {
                             let method_declaration = methods.get(method).unwrap();
                             let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
                             
@@ -86,7 +86,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                 }
                 Value::Struct { name, instantiation, values } => {
                     match type_infos.get(name).unwrap() {
-                        TypeInfo::Struct { bound, fields, methods } => {
+                        TypeInfo::Struct { bound, fields, .. } => {
                             // generate substitution map for struct fields
                             let substitution = generate_substitution(bound, &instantiation).unwrap();
 
@@ -119,7 +119,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                     Value::Int(_) => {
                         environment.insert(*key, GenericType::NumberType);
                     }
-                    Value::Struct { name, instantiation, values } => {
+                    Value::Struct { name, instantiation, .. } => {
                         environment.insert(*key, GenericType::NamedType(name, instantiation.clone()));
                     }
                 }

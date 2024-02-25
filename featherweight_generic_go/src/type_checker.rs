@@ -1,8 +1,6 @@
 use std::collections::{HashMap};
-use std::fmt::format;
-use diagnostics::{MethodImplementationError, report_duplicate_method_spec_parameter, report_duplicate_type_declaration, report_invalid_method_receiver, report_unknown_type, report_duplicate_literal_parameter, TypeDeclarationError, report_duplicate_method_parameter, CheckEnvironment, report_invalid_variable, report_invalid_method_call_arg_count_mismatch, report_invalid_method_call_not_implemented, report_invalid_method_call_number, report_invalid_struct_literal, StructLiteralError, report_invalid_select_unknown_field, report_invalid_select_interface, report_invalid_bin_op, BinOpError, report_invalid_subtype_method, report_invalid_subtype_base, report_invalid_subtype_method_call, report_method_not_implemented, report_invalid_subtype_number, SubTypeNumberError, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch, report_invalid_type_bound_arg_mismatch, report_duplicate_type_formal, report_invalid_subtype_struct_literal, report_invalid_type_parameter, report_unknown_type_parameter, report_invalid_assert_type_interface};
+use diagnostics::{report_invalid_subtype_base, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
-use parser::Expression::TypeAssertion;
 
 // TODO Self recursion in struct
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
@@ -49,7 +47,8 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
         if let Declaration::Type { name: type_name, bound, literal } = declaration {
             // type with this name already declared?
             if type_infos.contains_key(type_name) {
-                return Err(TypeError { message: report_duplicate_type_declaration(type_name) });
+                let error_message = format!("Type declaration '{type_name}' is not well-formed: Type '{type_name}' was already declared");
+                return Err(TypeError { message: error_message });
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields } => TypeInfo::Struct { bound, fields, methods: HashMap::new() },
@@ -66,29 +65,26 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
         if let Declaration::Method(method) = declaration {
             match type_infos.get_mut(method.receiver.type_) {
                 Some(TypeInfo::Interface { .. }) => {
-                    let error_message = report_invalid_method_receiver(
-                        method.specification.name,
-                        method.receiver.type_,
-                        MethodImplementationError::InterfaceReceiverType,
+                    let error_message = format!("Method declaration '{}' is not well-formed: Provided receiver type '{}' is an interface",
+                                                method.specification.name,
+                                                method.receiver.type_
                     );
                     return Err(TypeError { message: error_message });
                 }
                 Some(TypeInfo::Struct { methods, .. }) => {
                     // is the method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        let error_message = report_invalid_method_receiver(
-                            method.specification.name,
-                            method.receiver.type_,
-                            MethodImplementationError::DuplicateMethodImplementation,
+                        let error_message = format!("Method declaration '{}' is not well-formed: Method is already declared for receiver type '{}'",
+                                                    method.specification.name,
+                                                    method.receiver.type_
                         );
                         return Err(TypeError { message: error_message });
                     }
                 }
                 None => {
-                    let error_message = report_invalid_method_receiver(
-                        method.specification.name,
-                        method.receiver.type_,
-                        MethodImplementationError::UnknownReceiverType,
+                    let error_message = format!("Method declaration '{}' is not well-formed: Provided receiver type '{}' is not declared",
+                                                method.specification.name,
+                                                method.receiver.type_
                     );
                     return Err(TypeError { message: error_message });
                 }
@@ -106,14 +102,29 @@ pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, type_infos: &Typ
     }
 
     // body expression well-formed in the empty type environment and empty variable environment?
-    expression_well_formed(&program.expression, &HashMap::new(), &HashMap::new(), type_infos, "main")
+    match expression_well_formed(&program.expression, &HashMap::new(), &HashMap::new(), type_infos) {
+        Ok(type_) => Ok(type_),
+        Err(error) => {
+            Err(TypeError { message: format!("Body expression of main is not well-formed: {}", error.message) })
+        }
+    }
 }
 
 fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
     match declaration {
         // method declaration well-formed?
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
-            method_well_formed(receiver, specification, body, type_infos)?
+            match method_well_formed(receiver, specification, body, type_infos) {
+                Ok(_) => {}
+                Err(error) => {
+                    let error_message = format!("Method '{}' for receiver type '{}' is not well-formed:\n{}",
+                                                specification.name,
+                                                receiver.type_,
+                                                error.message
+                    );
+                    return Err(TypeError { message: error_message });
+                }
+            }
         }
         // type declaration well-formed?
         Declaration::Type { name, bound, literal } => {
@@ -175,7 +186,12 @@ fn interface_well_formed(methods: &[MethodSpecification], type_environment: &Typ
         }
 
         // method specification well-formed in the literal environment?
-        method_specification_well_formed(method_specification, type_environment, type_infos)?;
+        match method_specification_well_formed(method_specification, type_environment, type_infos) {
+            Ok(_) => {}
+            Err(error) => {
+                return Err(TypeError { message: format!("Method specification '{}' is not well-formed: {}", method_specification.name, error.message) });
+            }
+        }
     }
 
     Ok(())
@@ -234,7 +250,7 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // name of receiver type and parameter distinct?
         if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|binding| binding.name == parameter.name) {
-            return Err(TypeError { message: report_duplicate_method_parameter(receiver.type_, specification.name, parameter.name) });
+            return Err(TypeError { message: format!("Duplicate method parameter with name '{}'", parameter.name) });
         }
     }
 
@@ -283,26 +299,32 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
             }
 
             // body expression well-formed in the concatenated environment?
-            let expression_type = expression_well_formed(body, &variable_environment, &delta, type_infos, specification.name)?;
-
-            // body expression subtype of return type in the concatenated environment?
-            match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
-                Ok(_) => Ok(()),
+            match expression_well_formed(body, &variable_environment, &delta, type_infos) {
+                Ok(expression_type) => {
+                    // body expression subtype of return type in the concatenated environment?
+                    match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
+                        Ok(_) => {}
+                        Err(error) => {
+                            let error_message = format!("Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
+                                                        expression_type.name(),
+                                                        specification.return_type.name(),
+                                                        error.message
+                            );
+                            return Err(TypeError { message: error_message });
+                        }
+                    }
+                }
                 Err(error) => {
-                    let outer_error = report_invalid_subtype_method(
-                        expression_type.name(),
-                        specification.return_type.name(),
-                        specification.name,
-                        receiver.type_,
-                    );
-
-                    let error_msg = format!("{} {}", outer_error, error.message);
-                    Err(TypeError { message: error_msg })
+                    return Err(TypeError { message: format!("Body expression of method is not well-formed:\n{}", error.message) });
                 }
             }
         }
-        None => Err(TypeError { message: report_invalid_method_receiver(specification.name, receiver.type_, MethodImplementationError::UnknownReceiverType) })
+        None => {
+            return Err(TypeError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
+        }
     }
+
+    Ok(())
 }
 
 fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
@@ -361,7 +383,7 @@ fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironm
     for (name, type_) in inner.iter() {
         // duplicate type parameter names?
         match concat_environment.insert(*name, type_.clone()) {
-            Some(_) => return Err(TypeError { message: format!("Type environment already contains a type parameter named '{name}'") }),
+            Some(_) => return Err(TypeError { message: format!("Duplicate type parameter with name '{name}'") }),
             None => continue,
         }
     }
@@ -374,11 +396,7 @@ fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironm
     Ok(concat_environment)
 }
 
-fn nested_type_formals_well_formed<'a>(
-    outer: &TypeEnvironment<'a>,
-    inner: &TypeEnvironment<'a>,
-    type_infos: &TypeInfos,
-) -> Result<TypeEnvironment<'a>, TypeError> {
+fn nested_type_formals_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos) -> Result<TypeEnvironment<'a>, TypeError> {
     let _ = formal_type_well_formed(&HashMap::new(), outer, type_infos)?;
     let delta = formal_type_well_formed(outer, inner, type_infos)?;
 
@@ -390,18 +408,17 @@ pub(crate) fn expression_well_formed<'a>(
     variable_environment: &VariableEnvironment<'a>,
     delta: &TypeEnvironment<'a>,
     type_infos: &TypeInfos<'a>,
-    method_name: &str,
 ) -> Result<GenericType<'a>, TypeError> {
     match expression {
         Expression::Variable { name: variable_name } => {
             // variable declared in environment?
             match variable_environment.get(variable_name) {
                 Some(var_type) => Ok(var_type.clone()),
-                None => Err(TypeError { message: report_invalid_variable(method_name, variable_name) })
+                None => Err(TypeError { message: format!("Current context does not have a variable with name '{variable_name}'") })
             }
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
-            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
 
             // TODO 2 Times substitution?            
             match expression_type {
@@ -412,7 +429,7 @@ pub(crate) fn expression_well_formed<'a>(
                     match type_infos.get(type_name).unwrap() {
                         TypeInfo::Struct { bound, methods, .. } => {
                             match methods.get(method) {
-                                None => Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, type_name) }),
+                                None => Err(TypeError { message: format!("Method '{method}' is not implemented for type '{type_name}'") }),
                                 Some(declaration) => {
                                     // TODO verify again...
                                     let method_spec_substitution = generate_substitution_with_bound_check(bound, &type_instantiation, delta, type_infos)?;
@@ -421,34 +438,45 @@ pub(crate) fn expression_well_formed<'a>(
                                     let method_parameters_substitution = generate_substitution_with_bound_check(&declaration.specification.bound, instantiation, delta, type_infos)?;
 
                                     for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
-                                        let parameter_expression_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos, method_name)?;
+                                        let parameter_expression_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
                                         let substituted_parameter_expression = substitute_type_parameter(&parameter_expression_type, &method_parameters_substitution);
 
                                         let substituted_method_spec_parameter = &substituted_method_specification.parameters.get(index).unwrap().type_;
 
-                                        is_subtype_of(&substituted_parameter_expression, substituted_method_spec_parameter, delta, type_infos)?;
+                                        match is_subtype_of(&substituted_parameter_expression, substituted_method_spec_parameter, delta, type_infos) {
+                                            Ok(_) => {}
+                                            Err(error) => {
+                                                let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
+                                                                            substituted_parameter_expression.name(),
+                                                                            substituted_method_spec_parameter.name(),
+                                                                            error.message
+                                                );
+                                                return Err(TypeError { message: error_message });
+                                            }
+                                        }
                                     }
 
                                     Ok(substitute_type_parameter(&substituted_method_specification.return_type, &method_parameters_substitution))
                                 }
                             }
                         }
-                        TypeInfo::Interface { bound, methods } => {
-                            match methods.iter().find(|method_specification| &method_specification.name == method) {
-                                None => Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, type_name) }),
-                                Some(specification) => {
-                                    let substitution_map = generate_substitution(bound, instantiation)?;
-                                    let substituted_method_specification = substitute_method_specification(specification, &substitution_map)?;
-
-                                    println!("{:#?}", substituted_method_specification);
-
-                                    todo!()
-                                }
-                            }
+                        TypeInfo::Interface { .. } => {
+                            todo!()
+                            // match methods.iter().find(|method_specification| &method_specification.name == method) {
+                            //     None => Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, type_name) }),
+                            //     Some(specification) => {
+                            //         let substitution_map = generate_substitution(bound, instantiation)?;
+                            //         let substituted_method_specification = substitute_method_specification(specification, &substitution_map)?;
+                            //
+                            //         println!("{:#?}", substituted_method_specification);
+                            //
+                            //
+                            //     }
+                            // }
                         }
                     }
                 }
-                GenericType::NumberType => Err(TypeError { message: report_invalid_method_call_number(method_name) })
+                GenericType::NumberType => Err(TypeError { message: format!("Method '{method}' cannot be called on a number type") })
             }
 
             //     }
@@ -520,7 +548,7 @@ pub(crate) fn expression_well_formed<'a>(
 
                             // evaluate field expressions
                             for expression in field_expressions.iter() {
-                                let field_expression_type = expression_well_formed(expression, variable_environment, delta, type_infos, method_name)?;
+                                let field_expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
                                 field_expression_types.push(field_expression_type);
                             }
 
@@ -538,14 +566,14 @@ pub(crate) fn expression_well_formed<'a>(
 
                             Ok(struct_type)
                         }
-                        TypeInfo::Interface { .. } => Err(TypeError { message: report_invalid_struct_literal(method_name, name, StructLiteralError::InterfaceType) }),
+                        TypeInfo::Interface { .. } => Err(TypeError { message: format!("Constructed literal '{name}' is an interface type") }),
                     }
                 }
-                None => Err(TypeError { message: report_invalid_struct_literal(method_name, name, StructLiteralError::UnknownType) }),
+                None => Err(TypeError { message: format!("Struct literal '{name}' is not declared") }),
             }
         }
         Expression::Select { expression, field: field_var } => {
-            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
 
             match expression_type {
                 GenericType::NamedType(type_name, instantiation) => {
@@ -563,12 +591,21 @@ pub(crate) fn expression_well_formed<'a>(
                                 }
                             }
 
-                            Err(TypeError { message: report_invalid_select_unknown_field(method_name, type_name, field_var) })
+                            Err(TypeError { message: format!("Struct type '{type_name}' does not have a field named '{field_var}'") })
                         }
-                        TypeInfo::Interface { .. } => Err(TypeError { message: report_invalid_select_interface(method_name, type_name) }),
+                        TypeInfo::Interface { .. } => {
+                            Err(TypeError { message: format!("Select expression evaluates to interface type '{type_name}'") })
+                        }
                     }
                 }
-                _ => Err(TypeError { message: String::from("Select-expression evaluated to a number type or type parameter which is forbidden") }),
+
+                //_ => Err(TypeError { message: String::from("Select-expression evaluated to a number type or type parameter which is forbidden") }),
+                GenericType::TypeParameter(type_parameter) => {
+                    Err(TypeError { message: format!("Select expression evaluates to type parameter '{type_parameter}'") })
+                }
+                GenericType::NumberType => {
+                    Err(TypeError { message: String::from("Select expression evaluates to a number type") })
+                }
             }
         }
         Expression::TypeAssertion { expression, assert } => {
@@ -578,7 +615,7 @@ pub(crate) fn expression_well_formed<'a>(
             type_well_formed(assert, delta, type_infos)?;
 
             // evaluate body expression
-            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos, method_name)?;
+            let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
 
             match expression_type {
                 GenericType::TypeParameter(type_parameter) => {
@@ -636,10 +673,10 @@ pub(crate) fn expression_well_formed<'a>(
         }
         Expression::BinOp { lhs, rhs, .. } => {
             // left side of operation number type?
-            let lhs_type = expression_well_formed(lhs, variable_environment, delta, type_infos, method_name)?;
+            let lhs_type = expression_well_formed(lhs, variable_environment, delta, type_infos)?;
 
             // right side of operation number type?
-            let rhs_type = expression_well_formed(rhs, variable_environment, delta, type_infos, method_name)?;
+            let rhs_type = expression_well_formed(rhs, variable_environment, delta, type_infos)?;
 
             match (lhs_type, rhs_type) {
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
@@ -796,7 +833,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
             match (child_type_info, parent_type_info) {
                 (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => {
                     if child_name != parent_name {
-                        return Err(TypeError { message: report_invalid_subtype_struct_literal(child_name, parent_name) });
+                        return Err(TypeError { message: format!("Struct type '{}' can not be a subtype of struct type '{}'", child_name, parent_name) });
                     }
                 }
                 (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) }),
@@ -804,7 +841,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
                     for parent_method in parent_methods.iter() {
                         match child_methods.iter().find(|method_spec| method_spec.name == parent_method.name) {
                             None => {
-                                return Err(TypeError { message: format!("Interface type {child_name} is not a subtype of interface type {parent_name}: Missing implementation of method") });
+                                return Err(TypeError { message: format!("Method '{}' is not implemented for child type '{}'", parent_method.name, child_name) });
                             }
                             Some(_) => continue,
                         }
@@ -821,7 +858,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
 
                         match method_spec {
                             None => {
-                                return Err(TypeError { message: report_method_not_implemented(method.name, child_name, parent_name) });
+                                return Err(TypeError { message: format!("Method '{}' is not implemented for child type '{}'", method.name, child_name) });
                             }
                             Some(method_spec) => {
                                 // TODO subtype appropriate?

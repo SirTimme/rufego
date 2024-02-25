@@ -52,7 +52,7 @@ fn build_type_infos(program: &Program) {
 fn check_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match program_well_formed(program, type_infos) {
         Ok(_) => run_program(&program.expression, &HashMap::new(), type_infos),
-        Err(error) => eprintln!("{}", error.message),
+        Err(error) => eprintln!("Program is not well-formed:\n{}", error.message),
     }
 }
 
