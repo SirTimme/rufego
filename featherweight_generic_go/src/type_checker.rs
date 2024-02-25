@@ -127,7 +127,7 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
             match formal_type_well_formed(&HashMap::new(), &psi, type_infos) {
                 Ok(_) => {}
                 Err(error) => {
-                    return Err(TypeError { message: format!("Type environment of literal '{name}' is not well-formed: {}", error.message) });
+                    return Err(TypeError { message: format!("Type formals of literal '{name}' is not well-formed: {}", error.message) });
                 }
             }
 
