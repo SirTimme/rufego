@@ -24,34 +24,51 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
         }
         Expression::MethodCall { expression, method, instantiation: method_instantiation, parameter_expressions } => {
             let value = evaluate(expression, variables, type_infos)?;
-
+            
             match value {
-                Value::Int(_) => Err(EvalError { message: String::from("ERROR: Can't call a method on an integer value") }),
+                Value::Int(_) => Err(EvalError { message: format!("Tried to call method '{method}' on a number value") }),
                 Value::Struct { name, instantiation, values } => {
-                    let type_info = type_infos.get(name).unwrap();
+                    let type_info = match type_infos.get(name) {
+                        None => {
+                            return Err(EvalError { message: format!("Type '{name}' is not declared") });
+                        }
+                        Some(type_info) => {
+                            type_info
+                        }
+                    };
 
                     match type_info {
                         TypeInfo::Struct { bound, methods, .. } => {
-                            let method_declaration = methods.get(method).unwrap();
+                            let method_declaration = match methods.get(method) {
+                                None => {
+                                    return Err(EvalError { message: format!("Method {method} is not implemented for reciever type {name}") });
+                                }
+                                Some(method_declaration) => {
+                                    method_declaration
+                                }
+                            };
+
+                            // substitution map for receiver type
+                            let struct_substitution = generate_substitution(bound, &instantiation).unwrap();
+
+                            // substitution map for the generic method parameters
                             let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
 
-                            let mut struct_substitution = generate_substitution(bound, &instantiation).unwrap();
-                            struct_substitution.extend(method_substitution);
+                            let theta = concat_substitutions(&struct_substitution, &method_substitution);
 
-                            let substituted_expression = substitute_expression(&method_declaration.body, &struct_substitution)?;
-
+                            let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
+                            
+                            // substitute receiver and parameter with evaluated values
                             let mut local_variables = HashMap::new();
 
                             // insert receiver to variables
                             local_variables.insert(method_declaration.receiver.name, Value::Struct { name, instantiation, values });
 
-                            // insert method parameters in the local context
                             for (index, expression) in parameter_expressions.iter().enumerate() {
-                                if let Some(parameter) = method_declaration.specification.parameters.get(index) {
-                                    // evaluate type of the supplied parameter expression
-                                    let expression_type = evaluate(expression, variables, type_infos)?;
-                                    local_variables.insert(parameter.name, expression_type);
-                                }
+                                let parameter = method_declaration.specification.parameters.get(index).unwrap();
+                                let expression_type = evaluate(expression, variables, type_infos)?;
+
+                                local_variables.insert(parameter.name, expression_type);
                             }
 
                             Ok(evaluate(&substituted_expression, &local_variables, type_infos)?)
@@ -62,17 +79,17 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
             }
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
-            let mut values = Vec::new();
+            let mut field_values = Vec::new();
 
             for expression in field_expressions {
-                let value = evaluate(expression, variables, type_infos)?;
-                values.push(value);
+                let field_value = evaluate(expression, variables, type_infos)?;
+                field_values.push(field_value);
             }
 
             Ok(Value::Struct {
                 name,
                 instantiation: instantiation.clone(),
-                values,
+                values: field_values,
             })
         }
         Expression::Select { expression, field } => {
@@ -80,23 +97,37 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
 
             match value {
                 Value::Int(_) => {
-                    Err(EvalError { message: String::from("An integer value doesn't have fields") })
+                    Err(EvalError { message: String::from("Select expression evaluated to a number type") })
                 }
                 Value::Struct { name, instantiation, values } => {
-                    match type_infos.get(name).unwrap() {
+                    let type_info = match type_infos.get(name) {
+                        None => {
+                            return Err(EvalError { message: format!("Literal '{name}' is not declared") });
+                        }
+                        Some(type_info) => {
+                            type_info
+                        }
+                    };
+
+                    match type_info {
                         TypeInfo::Struct { bound, fields, .. } => {
                             // generate substitution map for struct fields
                             let substitution = generate_substitution(bound, &instantiation).unwrap();
 
-                            // substitute fields with type parameters with their instantiation
+                            // substitute fields with instantiation if possible
                             let substituted_struct_fields = substitute_struct_fields(&substitution, fields).unwrap();
 
-                            let field_index = substituted_struct_fields.iter().position(|field_binding| &field_binding.name == field).unwrap();
+                            for (index, field_binding) in substituted_struct_fields.iter().enumerate() {
+                                if &field_binding.name == field {
+                                    let selected_value = values.get(index).unwrap();
+                                    return Ok(selected_value.clone());
+                                }
+                            }
 
-                            Ok(values.get(field_index).unwrap().clone())
+                            Err(EvalError { message: format!("Struct type '{name}' does not have a field named '{field}'") })
                         }
                         TypeInfo::Interface { .. } => {
-                            Err(EvalError { message: String::from("Cant instantiate an interface literal") })
+                            Err(EvalError { message: format!("Tried to select on type '{name}' which is an interface") })
                         }
                     }
                 }
@@ -105,25 +136,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
         Expression::TypeAssertion { expression, assert } => {
             let value = evaluate(expression, variables, type_infos)?;
 
-            let value_type = match &value {
-                Value::Int(_) => GenericType::NumberType,
-                Value::Struct { name, instantiation, .. } => GenericType::NamedType(name, instantiation.clone()),
-            };
-
-            let mut environment = HashMap::new();
-
-            for (key, context_value) in variables {
-                match context_value {
-                    Value::Int(_) => {
-                        environment.insert(*key, GenericType::NumberType);
-                    }
-                    Value::Struct { name, instantiation, .. } => {
-                        environment.insert(*key, GenericType::NamedType(name, instantiation.clone()));
-                    }
-                }
-            }
-
-            match is_subtype_of(&value_type, assert, &environment, type_infos) {
+            match is_subtype_of(&type_of(&value), assert, &HashMap::new(), type_infos) {
                 Ok(_) => {}
                 Err(type_error) => {
                     return Err(EvalError { message: format!("ERROR: Runtime-Check of type assertion failed with following error {:?}", type_error) });
@@ -192,10 +205,7 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
         }
         Expression::TypeAssertion { expression, assert } => {
             let substituted_expression = substitute_expression(expression, substitution)?;
-            let substituted_assert = match substitution.get(assert.name()) {
-                None => assert,
-                Some(entry) => entry
-            };
+            let substituted_assert = substitution.get(assert.name()).unwrap_or(assert);
 
             Ok(Expression::TypeAssertion { expression: Box::new(substituted_expression), assert: substituted_assert.clone() })
         }
@@ -207,4 +217,29 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
             Ok(Expression::BinOp { lhs: Box::new(lhs_substituted), operator: *operator, rhs: Box::new(rhs_substituted) })
         }
     }
+}
+
+fn type_of<'a>(value: &'a Value) -> GenericType<'a> {
+    match value {
+        Value::Int(_) => {
+            GenericType::NumberType
+        }
+        Value::Struct { name, instantiation, .. } => {
+            GenericType::NamedType(name, instantiation.clone())
+        }
+    }
+}
+
+fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a SubstitutionMap<'b>) -> SubstitutionMap<'b> {
+    let mut theta = SubstitutionMap::new();
+
+    for (key, value) in phi {
+        theta.insert(key, value.clone());
+    }
+
+    for (key, value) in psi {
+        theta.insert(key, value.clone());
+    }
+
+    theta
 }

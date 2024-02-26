@@ -8,7 +8,7 @@ type Rectangle(type V Any(), R Any()) struct {
 }
 
 type Triangle(type T Any()) struct {
-    value Flight()
+    value T
 }
 
 type Flight(type) struct {
@@ -18,9 +18,9 @@ type Flight(type) struct {
 type Box(type) struct {}
 
 func (this Flight(type)) send(type T Any())(param T) Any() {
-    return param
+    return Triangle(T){ param }
 }
 
 func main() {
-    _ = Flight(){ 69 }.send(Flight())(Flight(){ 42 })
+    _ = Flight(){ 69 }.send(Box())(Box(){})
 }

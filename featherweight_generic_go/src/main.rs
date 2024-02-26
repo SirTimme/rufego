@@ -61,7 +61,7 @@ fn run_program(expression: &Expression, context: &HashMap<&str, Value>, type_inf
             println!("{:#?}", value);
             monomorph_program(expression, type_infos);
         },
-        Err(error) => eprintln!("{}", error.message),
+        Err(error) => eprintln!("Runtime evaluation of expression failed:\n{}", error.message),
     }
 }
 
