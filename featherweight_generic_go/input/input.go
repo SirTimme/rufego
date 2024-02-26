@@ -15,8 +15,10 @@ type Flight(type) struct {
     amount int
 }
 
+type Box(type) struct {}
+
 func (this Flight(type)) send(type)() Flight() {
-    return Triangle(Flight()){ Flight() { 42 } }
+    return this
 }
 
 func main() {

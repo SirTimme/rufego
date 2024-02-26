@@ -1,13 +1,8 @@
 use std::collections::{HashMap};
-use diagnostics::{report_invalid_subtype_base, report_invalid_subtype_return_type_mismatch, report_invalid_subtype_parameter_arg_mismatch, report_invalid_subtype_parameter_type_mismatch};
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // TODO Self recursion in struct
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
-// TODO Distinct Check Parameter name und Type parameter?
-// TODO subtyping 2 Interfaces
-// TODO subtyping mit 2 type parameters?
-// TODO type parameter return value method
 
 // Type name -> Type Info
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
@@ -105,7 +100,7 @@ pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, type_infos: &Typ
     match expression_well_formed(&program.expression, &HashMap::new(), &HashMap::new(), type_infos) {
         Ok(type_) => Ok(type_),
         Err(error) => {
-            Err(TypeError { message: format!("Body expression of main is not well-formed: {}", error.message) })
+            Err(TypeError { message: format!("Body expression of 'main' is not well-formed:\n{}", error.message) })
         }
     }
 }
@@ -462,73 +457,11 @@ pub(crate) fn expression_well_formed<'a>(
                         }
                         TypeInfo::Interface { .. } => {
                             todo!()
-                            // match methods.iter().find(|method_specification| &method_specification.name == method) {
-                            //     None => Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, type_name) }),
-                            //     Some(specification) => {
-                            //         let substitution_map = generate_substitution(bound, instantiation)?;
-                            //         let substituted_method_specification = substitute_method_specification(specification, &substitution_map)?;
-                            //
-                            //         println!("{:#?}", substituted_method_specification);
-                            //
-                            //
-                            //     }
-                            // }
                         }
                     }
                 }
                 GenericType::NumberType => Err(TypeError { message: format!("Method '{method}' cannot be called on a number type") })
             }
-
-            //     }
-            //     TypeInfo::Interface { methods, .. } => {
-            //         match methods.iter().find(|method_specification| &method_specification.name == method) {
-            //             Some(declaration) => {
-            //                 let substituted_environment = substitute_type_formals(method, &declaration.bound, instantiation, type_infos)?;
-            //
-            //                 // correct amount of parameters supplied?
-            //                 if declaration.parameters.len() != parameter_expressions.len() {
-            //                     let error_msg = report_invalid_method_call_arg_count_mismatch(
-            //                         method_name,
-            //                         expression_type.name(),
-            //                         declaration.name,
-            //                         declaration.parameters.len(),
-            //                         parameter_expressions.len(),
-            //                     );
-            //
-            //                     return Err(TypeError { message: error_msg });
-            //                 }
-            //
-            //                 for (index, expression) in parameter_expressions.iter().enumerate() {
-            //                     let expression_type = expression_well_formed(expression, variable_environment, &substituted_environment, type_infos, method_name)?;
-            //                     let parameter = declaration.parameters.get(index).unwrap();
-            //
-            //                     variable_environment.insert(parameter.name, expression_type);
-            //                 }
-            //
-            //                 // does the types of the parameter expressions match the types of the method parameters?
-            //                 for parameter in declaration.parameters.iter() {
-            //                     let parameter_type = variable_environment.get(parameter.name).unwrap();
-            //
-            //                     // is the supplied parameter expression subtype of the corresponding method parameter?
-            //                     match is_subtype_of(parameter_type, &parameter.type_, &substituted_environment, type_infos) {
-            //                         Ok(_) => (),
-            //                         Err(error) => {
-            //                             let base_error = report_invalid_subtype_base(parameter_type.name(), parameter_type.name());
-            //                             let error_msg = format!("{} {}", base_error, error.message);
-            //
-            //                             return Err(TypeError { message: error_msg });
-            //                         }
-            //                     }
-            //                 }
-            //
-            //                 Ok(declaration.return_type.clone())
-            //             }
-            //             None => {
-            //                 Err(TypeError { message: report_invalid_method_call_not_implemented(method_name, method, expression_type.name()) })
-            //             }
-            //         }
-            //     }
-            // }
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             let struct_type = GenericType::NamedType(name, instantiation.clone());
@@ -541,7 +474,11 @@ pub(crate) fn expression_well_formed<'a>(
                     match type_info {
                         TypeInfo::Struct { bound, fields, .. } => {
                             if fields.len() != field_expressions.len() {
-                                return Err(TypeError { message: format!("Struct type '{name}' has '{}' fields but '{}' were provided", fields.len(), field_expressions.len()) });
+                                let error_message = format!("Struct type '{name}' has '{}' fields but '{}' field values were provided",
+                                                            fields.len(),
+                                                            field_expressions.len()
+                                );
+                                return Err(TypeError { message: error_message });
                             }
 
                             let mut field_expression_types = Vec::new();
@@ -561,7 +498,16 @@ pub(crate) fn expression_well_formed<'a>(
                             for (index, substituted_field) in substituted_struct_fields.iter().enumerate() {
                                 let expression_type = field_expression_types.get(index).unwrap();
 
-                                is_subtype_of(expression_type, &substituted_field.type_, delta, type_infos)?;
+                                match is_subtype_of(expression_type, &substituted_field.type_, delta, type_infos) {
+                                    Ok(_) => {}
+                                    Err(error) => {
+                                        let error_message = format!("Expression for field '{}' of struct literal '{}' is not a subtype of declared field type:\n{}",
+                                                                    substituted_field.name,
+                                                                    name,
+                                                                    error.message);
+                                        return Err(TypeError { message: error_message });
+                                    }
+                                }
                             }
 
                             Ok(struct_type)
@@ -628,11 +574,30 @@ pub(crate) fn expression_well_formed<'a>(
 
                             match assert_type_info {
                                 TypeInfo::Struct { .. } => {
-                                    let expression_bound = bounds_of_type(&expression_type, type_infos, delta)?;
+                                    match bounds_of_type(&expression_type, type_infos, delta) {
+                                        Ok(expression_bound) => {
+                                            match is_subtype_of(assert, expression_bound, delta, type_infos) {
+                                                Ok(_) => {}
+                                                Err(error) => {
+                                                    let error_message = format!("Asserted type '{}' is not a subtype of type bounds of expression type '{}':\n{}",
+                                                                                assert.name(),
+                                                                                expression_bound.name(),
+                                                                                error.message
+                                                    );
+                                                    return Err(TypeError { message: error_message });
+                                                }
+                                            }
 
-                                    is_subtype_of(assert, expression_bound, delta, type_infos)?;
-
-                                    Ok(assert.clone())
+                                            Ok(assert.clone())
+                                        }
+                                        Err(error) => {
+                                            let error_message = format!("Type bounds of expression type '{}' are not satisfied:\n{}",
+                                                                        expression_type.name(),
+                                                                        error.message
+                                            );
+                                            Err(TypeError { message: error_message })
+                                        }
+                                    }
                                 }
                                 TypeInfo::Interface { .. } => Ok(assert.clone())
                             }
@@ -680,7 +645,7 @@ pub(crate) fn expression_well_formed<'a>(
 
             match (lhs_type, rhs_type) {
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
-                _ => Err(TypeError { message: String::from("Either LFS or RHS of a binary operation doesn't evaluate to a number type") })
+                _ => Err(TypeError { message: String::from("Either LFS or RHS of a binary operation does not evaluate to a number type") })
             }
         }
     }
@@ -690,13 +655,13 @@ fn bounds_of_type<'a>(type_: &'a GenericType, type_infos: &'a TypeInfos, delta: 
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             match delta.get(type_parameter) {
-                None => Err(TypeError { message: format!("Type parameter '{type_parameter}' is unknown in this context") }),
+                None => Err(TypeError { message: format!("Type parameter '{type_parameter}' is not declared in this context") }),
                 Some(type_bound) => Ok(type_bound)
             }
         }
         GenericType::NamedType(name, _) => {
             match type_infos.get(name) {
-                None => Err(TypeError { message: format!("Type '{name}' is unknown in this context") }),
+                None => Err(TypeError { message: format!("Type '{name}' is not declared") }),
                 Some(_) => Ok(type_)
             }
         }
@@ -821,10 +786,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
             if child_name == parent_name {
                 return Ok(());
             }
-            let child_type = type_environment.get(child_name).unwrap();
-            let parent_type = type_environment.get(parent_name).unwrap();
-
-            return is_subtype_of(child_type, parent_type, type_environment, type_infos);
+            return Err(TypeError { message: format!("Type parameter '{child_name}' can not be a subtype of type parameter '{parent_name}'") });
         }
         (GenericType::NamedType(child_name, _), GenericType::NamedType(parent_name, _)) => {
             let child_type_info = type_infos.get(child_name).unwrap();
@@ -832,82 +794,76 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
 
             match (child_type_info, parent_type_info) {
                 (TypeInfo::Struct { .. }, TypeInfo::Struct { .. }) => {
-                    if child_name != parent_name {
-                        return Err(TypeError { message: format!("Struct type '{}' can not be a subtype of struct type '{}'", child_name, parent_name) });
+                    if child_name == parent_name {
+                        return Ok(())
                     }
+                    return Err(TypeError { message: format!("Struct type '{child_name}' can not be a subtype of struct type '{parent_name}'")})
                 }
-                (TypeInfo::Interface { .. }, TypeInfo::Struct { .. }) => return Err(TypeError { message: report_invalid_subtype_base(child_name, parent_name) }),
-                (TypeInfo::Interface { methods: child_methods, .. }, TypeInfo::Interface { methods: parent_methods, .. }) => {
-                    for parent_method in parent_methods.iter() {
-                        match child_methods.iter().find(|method_spec| method_spec.name == parent_method.name) {
-                            None => {
-                                return Err(TypeError { message: format!("Method '{}' is not implemented for child type '{}'", parent_method.name, child_name) });
+                (_, TypeInfo::Interface { .. }) => {
+                    let child_methods = methods_of_type(child_type, type_environment, type_infos)?;
+                    let parent_methods = methods_of_type(parent_type, type_environment, type_infos)?;
+                    
+                    println!("Child methods {:#?}", child_methods);
+                    println!("Parent methods {:#?}", parent_methods);
+                }
+                _ => {
+                    return Err(TypeError {message: format!("Type '{child_name}' can not be a subtype of struct type '{parent_name}'")})
+                }
+            }
+        }
+        _ => return Err(TypeError { message: format!("Child type '{}' is not a subtype of parent type '{}'", child_type.name(), parent_type.name()) })
+    }
+
+    Ok(())
+}
+
+fn methods_of_type<'a>(type_: &'a GenericType, type_environment: &'a TypeEnvironment, type_infos: &'a TypeInfos) -> Result<Vec<MethodSpecification<'a>>, TypeError> {
+    match type_ {
+        GenericType::TypeParameter(type_parameter) => {
+            return match type_environment.get(type_parameter) {
+                None => {
+                    Err(TypeError { message: format!("Type parameter '{type_parameter}' is not declared in this context") })
+                }
+                Some(type_bound) => {
+                    methods_of_type(type_bound, type_environment, type_infos)
+                }
+            }
+        }
+        GenericType::NamedType(type_name, instantiation) => {
+            match type_infos.get(type_name) {
+                None => {
+                    Err(TypeError { message: format!("Type '{type_name}' is not declared")})
+                }
+                Some(type_info) => {
+                    match type_info {
+                        TypeInfo::Struct { bound, methods, .. } => {
+                            let substitution = generate_substitution_with_bound_check(bound, instantiation, type_environment, type_infos)?;
+                            let mut substituted_method_specifications = Vec::new();
+
+                            for method_declaration in methods.values() {
+                                let substituted_method = substitute_method_specification(&method_declaration.specification, &substitution)?;
+                                substituted_method_specifications.push(substituted_method);
                             }
-                            Some(_) => continue,
+
+                            Ok(substituted_method_specifications)
                         }
-                    }
+                        TypeInfo::Interface { bound, methods } => {
+                            let substitution = generate_substitution(bound, instantiation)?;
+                            let mut substituted_method_specifications = Vec::new();
 
-                    return Ok(());
-                }
-                (TypeInfo::Struct { .. }, TypeInfo::Interface { methods, .. }) => {
-                    for method in methods.iter() {
-                        let method_spec = match child_type_info {
-                            TypeInfo::Struct { methods, .. } => methods.get(method.name).map(|method_decl| &method_decl.specification),
-                            TypeInfo::Interface { methods, .. } => methods.iter().find(|method_spec| method_spec.name == method.name),
-                        };
-
-                        match method_spec {
-                            None => {
-                                return Err(TypeError { message: format!("Method '{}' is not implemented for child type '{}'", method.name, child_name) });
+                            for method_specification in methods.iter() {
+                                let substituted_method_specification = substitute_method_specification(method_specification, &substitution)?;
+                                substituted_method_specifications.push(substituted_method_specification);
                             }
-                            Some(method_spec) => {
-                                // TODO subtype appropriate?
-                                // is_subtype_of(&method.return_type, &method_spec.return_type, type_environment, type_infos)?;
-                                if method.return_type != method_spec.return_type {
-                                    let error_msg = report_invalid_subtype_return_type_mismatch(
-                                        method_spec.name,
-                                        child_name,
-                                        method.return_type.name(),
-                                        parent_name,
-                                        method_spec.return_type.name(),
-                                    );
-                                    return Err(TypeError { message: error_msg });
-                                }
 
-                                if method.parameters.len() != method_spec.parameters.len() {
-                                    let error_msg = report_invalid_subtype_parameter_arg_mismatch(
-                                        method_spec.name,
-                                        child_name,
-                                        method.parameters.len(),
-                                        parent_name,
-                                        method_spec.parameters.len(),
-                                    );
-                                    return Err(TypeError { message: error_msg });
-                                }
-
-                                for (index, method_parameter) in method.parameters.iter().enumerate() {
-                                    let child_method_parameter = method_spec.parameters.get(index).unwrap();
-
-                                    if child_method_parameter.type_ != method_parameter.type_ {
-                                        let error_msg = report_invalid_subtype_parameter_type_mismatch(
-                                            child_method_parameter.name,
-                                            method_spec.name,
-                                            parent_name,
-                                            method_parameter.type_.name(),
-                                            child_name,
-                                            child_method_parameter.type_.name(),
-                                        );
-                                        return Err(TypeError { message: error_msg });
-                                    }
-                                }
-                            }
+                            Ok(substituted_method_specifications)
                         }
                     }
                 }
             }
         }
-        _ => return Err(TypeError { message: report_invalid_subtype_base(child_type.name(), parent_type.name()) })
+        GenericType::NumberType => {
+            Ok(Vec::new())
+        }
     }
-
-    Ok(())
 }

@@ -14,7 +14,6 @@ mod token;
 mod parser;
 mod type_checker;
 mod interpreter;
-mod diagnostics;
 mod monomorpher;
 
 fn main() {
