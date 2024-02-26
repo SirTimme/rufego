@@ -34,16 +34,14 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                         TypeInfo::Struct { bound, methods, .. } => {
                             let method_declaration = methods.get(method).unwrap();
                             let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
-                            
+
                             let mut struct_substitution = generate_substitution(bound, &instantiation).unwrap();
                             struct_substitution.extend(method_substitution);
-                                                        
+
                             let substituted_expression = substitute_expression(&method_declaration.body, &struct_substitution)?;
-                            
-                            println!("Sub Expr {:#?}", substituted_expression);
-                            
+
                             let mut local_variables = HashMap::new();
-                            
+
                             // insert receiver to variables
                             local_variables.insert(method_declaration.receiver.name, Value::Struct { name, instantiation, values });
 
@@ -55,7 +53,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                                     local_variables.insert(parameter.name, expression_type);
                                 }
                             }
-            
+
                             Ok(evaluate(&substituted_expression, &local_variables, type_infos)?)
                         }
                         TypeInfo::Interface { .. } => Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") }),
@@ -170,11 +168,11 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
                 substituted_parameter_expressions.push(substituted_parameter);
             }
 
-            Ok(Expression::MethodCall { 
-                expression: Box::new(substituted_expression), 
-                method, 
-                instantiation: instantiation.clone(), 
-                parameter_expressions: substituted_parameter_expressions 
+            Ok(Expression::MethodCall {
+                expression: Box::new(substituted_expression),
+                method,
+                instantiation: instantiation.clone(),
+                parameter_expressions: substituted_parameter_expressions,
             })
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {

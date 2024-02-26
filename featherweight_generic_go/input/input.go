@@ -17,10 +17,10 @@ type Flight(type) struct {
 
 type Box(type) struct {}
 
-func (this Flight(type)) send(type)() Flight() {
-    return this
+func (this Flight(type)) send(type T Any())(param T) Any() {
+    return param
 }
 
 func main() {
-    _ = Rectangle(Flight(), Triangle(Flight())){ Flight(){ 42 }, Triangle(Flight()){ Flight(){ 69 } } }.client.value.send()()
+    _ = Flight(){ 69 }.send(Flight())(Flight(){ 42 })
 }
