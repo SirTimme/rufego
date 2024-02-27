@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use parser::{Expression, GenericType, Operator};
-use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, SubstitutionMap, TypeInfo, TypeInfos};
+use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeInfo, TypeInfos};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Value<'a> {
@@ -55,7 +55,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                             let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
 
                             let theta = concat_substitutions(&struct_substitution, &method_substitution);
-
+                            
                             let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
                             
                             // substitute receiver and parameter with evaluated values
@@ -180,11 +180,18 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
                 let substituted_parameter = substitute_expression(parameter_expression, substitution)?;
                 substituted_parameter_expressions.push(substituted_parameter);
             }
+            
+            let mut substituted_instantiation = Vec::new();
+            
+            for instantiated_type in instantiation {
+                let substituted_instantiation_type = substitute_type_parameter(instantiated_type, substitution);
+                substituted_instantiation.push(substituted_instantiation_type)
+            }
 
             Ok(Expression::MethodCall {
                 expression: Box::new(substituted_expression),
                 method,
-                instantiation: instantiation.clone(),
+                instantiation: substituted_instantiation,
                 parameter_expressions: substituted_parameter_expressions,
             })
         }
@@ -196,7 +203,14 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
                 substituted_field_expressions.push(substituted_field)
             }
 
-            Ok(Expression::StructLiteral { name, instantiation: instantiation.clone(), field_expressions: substituted_field_expressions })
+            let mut substituted_instantiation = Vec::new();
+
+            for instantiated_type in instantiation {
+                let substituted_instantiation_type = substitute_type_parameter(instantiated_type, substitution);
+                substituted_instantiation.push(substituted_instantiation_type)
+            }
+
+            Ok(Expression::StructLiteral { name, instantiation: substituted_instantiation, field_expressions: substituted_field_expressions })
         }
         Expression::Select { expression, field } => {
             let substituted_expression = substitute_expression(expression, substitution)?;

@@ -3,6 +3,7 @@ use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericTy
 
 // TODO Self recursion in struct
 // TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
+// TODO generic return type of interface --> how to implement by struct?
 
 // Type name -> Type Info
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
@@ -192,11 +193,7 @@ fn interface_well_formed(methods: &[MethodSpecification], type_environment: &Typ
     Ok(())
 }
 
-fn method_specification_well_formed(
-    specification: &MethodSpecification,
-    literal_environment: &TypeEnvironment,
-    type_infos: &TypeInfos,
-) -> Result<(), TypeError> {
+fn method_specification_well_formed(specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
     // build environment for type formals of method specification
     let mut method_environment = HashMap::new();
 
@@ -238,8 +235,6 @@ fn method_specification_well_formed(
 
     Ok(())
 }
-
-// TODO generic return type of interface --> how to implement by struct?
 
 fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
     for (index, parameter) in specification.parameters.iter().enumerate() {
@@ -332,7 +327,9 @@ fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &T
 
             // instantiated types satisfy type bounds of type formals?
             match type_infos.get(type_name) {
-                None => return Err(TypeError { message: format!("Type '{type_name}' is not declared in this context") }),
+                None => {
+                    return Err(TypeError { message: format!("Type '{type_name}' is not declared in this context") });
+                }
                 Some(type_info) => {
                     match type_info {
                         TypeInfo::Struct { bound, .. } => {
@@ -431,17 +428,16 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                     )?;
 
                     for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
-                        let actual_parameter_expression = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
-
-                        // substitute expression type with instantiated types if possible
-                        let actual_parameter_type = substitute_type_parameter(&actual_parameter_expression, &parameter_substitution);
-
-                        let declared_parameter_type = &method_specification.parameters.get(index).unwrap().type_;
+                        // eval and substitute parameter expression
+                        let actual_parameter_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
+                        let actual_parameter_type = substitute_type_parameter(&actual_parameter_type, &parameter_substitution);
 
                         // substitute declared parameter type with instantiated types if possible
-                        let declared_substituted_parameter_type = substitute_type_parameter(declared_parameter_type, &parameter_substitution);
+                        let declared_parameter_type = &method_specification.parameters.get(index).unwrap().type_;
+                        let declared_parameter_type = substitute_type_parameter(declared_parameter_type, &parameter_substitution);
 
-                        match is_subtype_of(&actual_parameter_type, &declared_substituted_parameter_type, delta, type_infos) {
+                        // actual parameter type subtype from declared parameter type?
+                        match is_subtype_of(&actual_parameter_type, &declared_parameter_type, delta, type_infos) {
                             Ok(_) => {}
                             Err(error) => {
                                 let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
@@ -559,8 +555,6 @@ pub(crate) fn expression_well_formed<'a, 'b>(
             }
         }
         Expression::TypeAssertion { expression, assert } => {
-            // TODO variable as assert type?
-
             // asserted type well-formed?
             type_well_formed(assert, delta, type_infos)?;
 
@@ -722,7 +716,7 @@ fn generate_substitution_with_bound_check<'a, 'b>(
     Ok(generated_substitution)
 }
 
-fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, substitution: &'a SubstitutionMap<'b>) -> GenericType<'b> {
+pub(crate) fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, substitution: &'a SubstitutionMap<'b>) -> GenericType<'b> {
     match type_ {
         GenericType::TypeParameter(type_name) => {
             match substitution.get(type_name) {

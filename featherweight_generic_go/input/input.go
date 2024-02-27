@@ -17,10 +17,12 @@ type Flight(type) struct {
 
 type Box(type) struct {}
 
+type Square(type) struct {}
+
 func (this Flight(type)) send(type T Any())(param T) Any() {
     return Triangle(T){ param }
 }
 
 func main() {
-    _ = Flight(){ 69 }.send(Box())(Box(){})
+    _ = Flight(){ 69 }.send(Square())(Square(){})
 }
