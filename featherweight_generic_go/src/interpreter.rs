@@ -24,7 +24,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
         }
         Expression::MethodCall { expression, method, instantiation: method_instantiation, parameter_expressions } => {
             let value = evaluate(expression, variables, type_infos)?;
-            
+
             match value {
                 Value::Int(_) => Err(EvalError { message: format!("Tried to call method '{method}' on a number value") }),
                 Value::Struct { name, instantiation, values } => {
@@ -55,9 +55,9 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                             let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
 
                             let theta = concat_substitutions(&struct_substitution, &method_substitution);
-                            
+
                             let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
-                            
+
                             // substitute receiver and parameter with evaluated values
                             let mut local_variables = HashMap::new();
 
@@ -152,7 +152,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
             let lhs_value = evaluate(lhs, variables, type_infos)?;
             let rhs_value = evaluate(rhs, variables, type_infos)?;
 
-            match (lhs_value, rhs_value) {
+            match (&lhs_value, &rhs_value) {
                 (Value::Int(lhs), Value::Int(rhs)) => {
                     match operator {
                         Operator::Add => Ok(Value::Int(lhs + rhs)),
@@ -160,7 +160,11 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                     }
                 }
                 _ => {
-                    Err(EvalError { message: String::from("ERROR: LHS or RHS of a binary operation doesnt have a integer type") })
+                    let error_message = format!("Runtime evaluation of a binary operation failed: LHS was type '{}' RHS was type {}",
+                                                type_of(&lhs_value).name(),
+                                                type_of(&rhs_value).name()
+                    );
+                    Err(EvalError { message: error_message })
                 }
             }
         }
@@ -180,9 +184,9 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
                 let substituted_parameter = substitute_expression(parameter_expression, substitution)?;
                 substituted_parameter_expressions.push(substituted_parameter);
             }
-            
+
             let mut substituted_instantiation = Vec::new();
-            
+
             for instantiated_type in instantiation {
                 let substituted_instantiation_type = substitute_type_parameter(instantiated_type, substitution);
                 substituted_instantiation.push(substituted_instantiation_type)
