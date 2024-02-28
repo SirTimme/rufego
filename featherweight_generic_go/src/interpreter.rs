@@ -138,8 +138,8 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
 
             match is_subtype_of(&type_of(&value), assert, &HashMap::new(), type_infos) {
                 Ok(_) => {}
-                Err(type_error) => {
-                    return Err(EvalError { message: format!("ERROR: Runtime-Check of type assertion failed with following error {:?}", type_error) });
+                Err(error) => {
+                    return Err(EvalError { message: format!("Runtime assertion for type '{}' failed:\n{}", type_of(&value).name(), error.message) });
                 }
             }
 
