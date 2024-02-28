@@ -312,7 +312,7 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
             return Err(TypeError { message: error_message });
         }
     }
-    
+
     Ok(())
 }
 
@@ -325,19 +325,21 @@ fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &T
             type_actual_well_formed(instantiation, delta, type_infos)?;
 
             // instantiated types satisfy type bounds of type formals?
-            match type_infos.get(type_name) {
+            let type_info = match type_infos.get(type_name) {
                 None => {
                     return Err(TypeError { message: format!("Type '{type_name}' is not declared in this context") });
                 }
                 Some(type_info) => {
-                    match type_info {
-                        TypeInfo::Struct { bound, .. } => {
-                            let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
-                        }
-                        TypeInfo::Interface { bound, .. } => {
-                            let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
-                        }
-                    }
+                    type_info
+                }
+            };
+
+            match type_info {
+                TypeInfo::Struct { bound, .. } => {
+                    let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
+                }
+                TypeInfo::Interface { bound, .. } => {
+                    let _ = generate_substitution_with_bound_check(bound, instantiation, delta, type_infos)?;
                 }
             }
         }
@@ -414,44 +416,46 @@ pub(crate) fn expression_well_formed<'a, 'b>(
             // retrieve all methods for the expression type
             let type_methods = methods_of_type(&expression_type, delta, type_infos)?;
 
-            match type_methods.iter().find(|method_spec| &method_spec.name == method) {
+            let method_specification = match type_methods.iter().find(|method_spec| &method_spec.name == method) {
                 None => {
-                    Err(TypeError { message: format!("Method '{method}' is not implemented for receiver type '{}'", expression_type.name()) })
+                    return Err(TypeError { message: format!("Method '{method}' is not implemented for receiver type '{}'", expression_type.name()) });
                 }
                 Some(method_specification) => {
-                    let parameter_substitution = generate_substitution_with_bound_check(
-                        &method_specification.bound,
-                        instantiation,
-                        delta,
-                        type_infos,
-                    )?;
+                    method_specification
+                }
+            };
 
-                    for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
-                        // eval and substitute parameter expression
-                        let actual_parameter_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
-                        let actual_parameter_type = substitute_type_parameter(&actual_parameter_type, &parameter_substitution);
+            let parameter_substitution = generate_substitution_with_bound_check(
+                &method_specification.bound,
+                instantiation,
+                delta,
+                type_infos,
+            )?;
 
-                        // substitute declared parameter type with instantiated types if possible
-                        let declared_parameter_type = &method_specification.parameters.get(index).unwrap().type_;
-                        let declared_parameter_type = substitute_type_parameter(declared_parameter_type, &parameter_substitution);
+            for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
+                // eval and substitute parameter expression
+                let actual_parameter_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
+                let actual_parameter_type = substitute_type_parameter(&actual_parameter_type, &parameter_substitution);
 
-                        // actual parameter type subtype from declared parameter type?
-                        match is_subtype_of(&actual_parameter_type, &declared_parameter_type, delta, type_infos) {
-                            Ok(_) => {}
-                            Err(error) => {
-                                let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
-                                                            actual_parameter_type.name(),
-                                                            declared_parameter_type.name(),
-                                                            error.message
-                                );
-                                return Err(TypeError { message: error_message });
-                            }
-                        }
+                // substitute declared parameter type with instantiated types if possible
+                let declared_parameter_type = &method_specification.parameters.get(index).unwrap().type_;
+                let declared_parameter_type = substitute_type_parameter(declared_parameter_type, &parameter_substitution);
+
+                // actual parameter type subtype from declared parameter type?
+                match is_subtype_of(&actual_parameter_type, &declared_parameter_type, delta, type_infos) {
+                    Ok(_) => {}
+                    Err(error) => {
+                        let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
+                                                    actual_parameter_type.name(),
+                                                    declared_parameter_type.name(),
+                                                    error.message
+                        );
+                        return Err(TypeError { message: error_message });
                     }
-
-                    Ok(substitute_type_parameter(&method_specification.return_type, &parameter_substitution))
                 }
             }
+
+            Ok(substitute_type_parameter(&method_specification.return_type, &parameter_substitution))
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             let struct_type = GenericType::NamedType(name, instantiation.clone());
@@ -464,7 +468,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                 }
             }
 
-            let struct_type_info = match type_infos.get(name) {
+            let type_info = match type_infos.get(name) {
                 None => {
                     return Err(TypeError { message: format!("Struct literal '{name}' is not declared") });
                 }
@@ -473,7 +477,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                 }
             };
 
-            match struct_type_info {
+            match type_info {
                 TypeInfo::Struct { bound, fields, .. } => {
                     if fields.len() != field_expressions.len() {
                         let error_message = format!("Struct type '{name}' has '{}' fields but '{}' field values were provided",
@@ -520,115 +524,73 @@ pub(crate) fn expression_well_formed<'a, 'b>(
         Expression::Select { expression, field: field_var } => {
             let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
 
-            match expression_type {
-                GenericType::NamedType(type_name, instantiation) => {
-                    match type_infos.get(type_name).unwrap() {
-                        TypeInfo::Struct { bound, fields, .. } => {
-                            // generate substitution map for struct fields
-                            let substitution = generate_substitution(bound, &instantiation)?;
+            if let GenericType::NamedType(type_name, instantiation) = expression_type {
+                return match type_infos.get(type_name).unwrap() {
+                    TypeInfo::Struct { bound, fields, .. } => {
+                        // generate substitution map for struct fields
+                        let substitution = generate_substitution(bound, &instantiation)?;
 
-                            // substitute fields with type parameters with their instantiation
-                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+                        // substitute fields with type parameters with their instantiation
+                        let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
 
-                            for field_binding in &substituted_struct_fields {
-                                if &field_binding.name == field_var {
-                                    return Ok(field_binding.type_.clone());
-                                }
+                        for field_binding in &substituted_struct_fields {
+                            if &field_binding.name == field_var {
+                                return Ok(field_binding.type_.clone());
                             }
+                        }
 
-                            Err(TypeError { message: format!("Struct type '{type_name}' does not have a field named '{field_var}'") })
-                        }
-                        TypeInfo::Interface { .. } => {
-                            Err(TypeError { message: format!("Select expression evaluates to interface type '{type_name}'") })
-                        }
+                        Err(TypeError { message: format!("Struct type '{type_name}' does not have a field named '{field_var}'") })
                     }
-                }
-
-                //_ => Err(TypeError { message: String::from("Select-expression evaluated to a number type or type parameter which is forbidden") }),
-                GenericType::TypeParameter(type_parameter) => {
-                    Err(TypeError { message: format!("Select expression evaluates to type parameter '{type_parameter}'") })
-                }
-                GenericType::NumberType => {
-                    Err(TypeError { message: String::from("Select expression evaluates to a number type") })
-                }
+                    TypeInfo::Interface { .. } => {
+                        Err(TypeError { message: format!("Select expression evaluates to interface type '{type_name}'") })
+                    }
+                };
             }
+
+            Err(TypeError { message: format!("Select expression are only allowed on named types, expression evaluated to '{}' instead", expression_type.name()) })
         }
         Expression::TypeAssertion { expression, assert } => {
-            // asserted type well-formed?
-            type_well_formed(assert, delta, type_infos)?;
-
             // evaluate body expression
             let expression_type = expression_well_formed(expression, variable_environment, delta, type_infos)?;
 
+            // asserted type declared?
+            type_well_formed(assert, delta, type_infos)?;
+
             match expression_type {
-                GenericType::TypeParameter(type_parameter) => {
-                    let type_info = typeinfo_of_interface_like_type(type_parameter, type_infos, delta)?;
-
-                    match type_info {
-                        TypeInfo::Struct { .. } => Ok(assert.clone()),
-                        TypeInfo::Interface { .. } => {
-                            let assert_type_info = typeinfo_of_interface_like_type(assert.name(), type_infos, delta)?;
-
-                            match assert_type_info {
-                                TypeInfo::Struct { .. } => {
-                                    match bounds_of_type(&expression_type, type_infos, delta) {
-                                        Ok(expression_bound) => {
-                                            match is_subtype_of(assert, expression_bound, delta, type_infos) {
-                                                Ok(_) => {}
-                                                Err(error) => {
-                                                    let error_message = format!("Asserted type '{}' is not a subtype of type bounds of expression type '{}':\n{}",
-                                                                                assert.name(),
-                                                                                expression_bound.name(),
-                                                                                error.message
-                                                    );
-                                                    return Err(TypeError { message: error_message });
-                                                }
-                                            }
-
-                                            Ok(assert.clone())
-                                        }
-                                        Err(error) => {
-                                            let error_message = format!("Type bounds of expression type '{}' are not satisfied:\n{}",
-                                                                        expression_type.name(),
-                                                                        error.message
-                                            );
-                                            Err(TypeError { message: error_message })
-                                        }
-                                    }
-                                }
-                                TypeInfo::Interface { .. } => Ok(assert.clone())
-                            }
+                GenericType::TypeParameter(_) => {
+                    match type_infos.get(assert.name()).unwrap() {
+                        TypeInfo::Struct { .. } => {
+                            let bounds_of_asserted_type = bounds_of_type(&expression_type, type_infos, delta)?;
+                            is_subtype_of(assert, bounds_of_asserted_type, delta, type_infos)?;
                         }
+                        TypeInfo::Interface { .. } => {}
                     }
                 }
                 GenericType::NamedType(type_name, _) => {
-                    let type_info = typeinfo_of_interface_like_type(type_name, type_infos, delta)?;
-
-                    match type_info {
-                        TypeInfo::Struct { .. } => Ok(assert.clone()),
+                    match type_infos.get(type_name).unwrap() {
+                        TypeInfo::Struct { .. } => {}
                         TypeInfo::Interface { .. } => {
-                            let assert_type_info = typeinfo_of_interface_like_type(assert.name(), type_infos, delta)?;
-
-                            match assert_type_info {
+                            match type_infos.get(assert.name()).unwrap() {
                                 TypeInfo::Struct { .. } => {
-                                    let expression_bound = bounds_of_type(&expression_type, type_infos, delta)?;
-
-                                    is_subtype_of(assert, expression_bound, delta, type_infos)?;
-
-                                    Ok(assert.clone())
+                                    let bounds_of_asserted_type = bounds_of_type(&expression_type, type_infos, delta)?;
+                                    is_subtype_of(assert, bounds_of_asserted_type, delta, type_infos)?;
                                 }
-                                TypeInfo::Interface { .. } => Ok(assert.clone())
+                                TypeInfo::Interface { .. } => {}
                             }
                         }
                     }
                 }
                 GenericType::NumberType => {
                     match assert {
-                        GenericType::NumberType => Ok(assert.clone()),
-                        _ => Err(TypeError { message: format!("Assertion failed: Tried to assert '{}' on type '{}'", assert.name(), expression_type.name()) })
+                        GenericType::NumberType => {}
+                        _ => {
+                            return Err(TypeError { message: format!("Type assertion is not well-formed\nTried to assert '{}' on type '{}'", assert.name(), expression_type.name()) });
+                        }
                     }
                 }
             }
+
+            Ok(assert.clone())
         }
         Expression::Number { .. } => {
             Ok(GenericType::NumberType)
@@ -640,9 +602,9 @@ pub(crate) fn expression_well_formed<'a, 'b>(
             // right side of operation number type?
             let rhs_type = expression_well_formed(rhs, variable_environment, delta, type_infos)?;
 
-            match (lhs_type, rhs_type) {
+            match (&lhs_type, &rhs_type) {
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
-                _ => Err(TypeError { message: String::from("Either LFS or RHS of a binary operation does not evaluate to a number type") })
+                _ => Err(TypeError { message: format!("Binary operation is not well-formed:\nLHS was type '{}', RHS was type '{}'", lhs_type.name(), rhs_type.name()) })
             }
         }
     }
@@ -663,18 +625,6 @@ fn bounds_of_type<'a>(type_: &'a GenericType, type_infos: &'a TypeInfos, delta: 
             }
         }
         GenericType::NumberType => Ok(type_)
-    }
-}
-
-fn typeinfo_of_interface_like_type<'a>(type_name: &str, type_infos: &'a TypeInfos, delta: &TypeEnvironment) -> Result<&'a TypeInfo<'a>, TypeError> {
-    match type_infos.get(type_name) {
-        None => {
-            match delta.get(type_name) {
-                None => Err(TypeError { message: format!("Could not find typeinfo for type '{type_name}'") }),
-                Some(type_) => Ok(type_infos.get(type_.name()).unwrap()),
-            }
-        }
-        Some(type_info) => Ok(type_info),
     }
 }
 
