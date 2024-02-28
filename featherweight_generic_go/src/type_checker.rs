@@ -245,75 +245,74 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
     }
 
     // receiver type declared?
-    match type_infos.get(receiver.type_) {
-        Some(_) => {
-            // build environment for type formals of receiver type
-            let mut receiver_environment = HashMap::new();
-
-            // keep track of instantiated types
-            let mut instantiated_types = Vec::new();
-
-            for binding in &receiver.instantiation {
-                receiver_environment.insert(binding.name, binding.type_.clone());
-                instantiated_types.push(GenericType::TypeParameter(binding.name));
-            }
-
-            // create receiver type with instantiated types
-            let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
-
-            // build environment for type formals of method
-            let mut method_environment = HashMap::new();
-
-            for binding in &specification.bound {
-                method_environment.insert(binding.name, binding.type_.clone());
-            }
-
-            // concatenate environment of receiver type and method
-            let delta = nested_type_formals_well_formed(&receiver_environment, &method_environment, type_infos)?;
-
-            // parameter types well-formed in the concatenated environment?
-            for parameter in &specification.parameters {
-                type_well_formed(&parameter.type_, &delta, type_infos)?;
-            }
-
-            // return-type well-formed in the concatenated environment??
-            type_well_formed(&specification.return_type, &delta, type_infos)?;
-
-            // create environment for method parameters
-            let mut variable_environment = HashMap::new();
-
-            variable_environment.insert(receiver.name, receiver_type);
-
-            for parameter in &specification.parameters {
-                variable_environment.insert(parameter.name, parameter.type_.clone());
-            }
-
-            // body expression well-formed in the concatenated environment?
-            match expression_well_formed(body, &variable_environment, &delta, type_infos) {
-                Ok(expression_type) => {
-                    // body expression subtype of return type in the concatenated environment?
-                    match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
-                        Ok(_) => {}
-                        Err(error) => {
-                            let error_message = format!("Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
-                                                        expression_type.name(),
-                                                        specification.return_type.name(),
-                                                        error.message
-                            );
-                            return Err(TypeError { message: error_message });
-                        }
-                    }
-                }
-                Err(error) => {
-                    return Err(TypeError { message: format!("Body expression of method is not well-formed:\n{}", error.message) });
-                }
-            }
-        }
-        None => {
-            return Err(TypeError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
-        }
+    if type_infos.get(receiver.type_).is_none() {
+        return Err(TypeError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
     }
 
+    // build environment for type formals of receiver type
+    let mut receiver_environment = HashMap::new();
+
+    // keep track of instantiated types
+    let mut instantiated_types = Vec::new();
+
+    for binding in &receiver.instantiation {
+        receiver_environment.insert(binding.name, binding.type_.clone());
+        instantiated_types.push(GenericType::TypeParameter(binding.name));
+    }
+
+    // create receiver type with instantiated types
+    let receiver_type = GenericType::NamedType(receiver.type_, instantiated_types);
+
+    // build environment for type formals of method
+    let mut method_environment = HashMap::new();
+
+    for binding in &specification.bound {
+        method_environment.insert(binding.name, binding.type_.clone());
+    }
+
+    // concatenate environment of receiver type and method
+    let delta = nested_type_formals_well_formed(&receiver_environment, &method_environment, type_infos)?;
+
+    // parameter types well-formed in the concatenated environment?
+    for parameter in &specification.parameters {
+        type_well_formed(&parameter.type_, &delta, type_infos)?;
+    }
+
+    // return-type well-formed in the concatenated environment??
+    type_well_formed(&specification.return_type, &delta, type_infos)?;
+
+    // create environment for method parameters
+    let mut variable_environment = HashMap::new();
+
+    variable_environment.insert(receiver.name, receiver_type);
+
+    for parameter in &specification.parameters {
+        variable_environment.insert(parameter.name, parameter.type_.clone());
+    }
+
+    // body expression well-formed in the concatenated environment?
+    let expression_type = match expression_well_formed(body, &variable_environment, &delta, type_infos) {
+        Ok(expression_type) => {
+            expression_type
+        }
+        Err(error) => {
+            return Err(TypeError { message: format!("Body expression of method is not well-formed:\n{}", error.message) });
+        }
+    };
+
+    // body expression subtype of return type in the concatenated environment?
+    match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
+        Ok(_) => {}
+        Err(error) => {
+            let error_message = format!("Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
+                                        expression_type.name(),
+                                        specification.return_type.name(),
+                                        error.message
+            );
+            return Err(TypeError { message: error_message });
+        }
+    }
+    
     Ok(())
 }
 
