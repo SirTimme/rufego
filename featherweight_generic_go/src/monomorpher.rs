@@ -1,47 +1,52 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
 use parser::{Expression, GenericType};
-use type_checker::{expression_well_formed, TypeEnvironment, TypeError, TypeInfo, TypeInfos, VariableEnvironment};
+use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, TypeEnvironment, TypeError, TypeInfo, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum InstanceType<'a> {
+pub(crate) enum InstanceType<'a> {
     Type {
         type_: GenericType<'a>,
     },
     Method {
         type_: GenericType<'a>,
         method_name: &'a str,
-        type_arguments: Vec<GenericType<'a>>,
+        instantiation: Vec<GenericType<'a>>,
     },
 }
 
-pub(crate) fn monomorph(expression: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
-    let initial_variable_set = HashMap::new();
-    let initial_type_set = HashMap::new();
+pub(crate) fn monomorph<'a, 'b>(expression: &'a Expression<'b>, type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
+    let mut instance_set = instance_set_of(expression, &HashMap::new(), &HashMap::new(), type_infos)?;
+    let mut instance_set_size = instance_set.len();
+    let delta = TypeEnvironment::new();
     
-    let mut instance_set = instance_set_of(expression, &initial_variable_set, &initial_type_set, type_infos)?;
-
     loop {
-        let result = apply_g_function(&instance_set, type_infos)?;
+        let iteration_result = g_function(&instance_set, &delta, type_infos)?;
 
-        if HashSet::is_empty(&result) {
+        for value in iteration_result {
+            if !instance_set.contains(&value) {
+                instance_set.insert(value);
+            }
+        }
+
+        if instance_set.len() == instance_set_size {
             break;
         }
 
-        instance_set.extend(result);
+        instance_set_size = instance_set.len();
     }
-    
-    // println!("{:#?}", instance_set);
+
+    println!("{:#?}", instance_set);
 
     Ok(())
 }
 
-fn instance_set_of<'a>(
-    expression: &'a Expression<'a>,
-    variable_environment: &'a VariableEnvironment,
-    type_environment: &'a TypeEnvironment,
-    type_infos: &'a TypeInfos<'a>,
-) -> Result<HashSet<InstanceType<'a>>, TypeError> {
+fn instance_set_of<'a, 'b>(
+    expression: &'a Expression<'b>,
+    variable_environment: &'a VariableEnvironment<'b>,
+    type_environment: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<HashSet<InstanceType<'b>>, TypeError> {
     match expression {
         Expression::Variable { .. } => Ok(HashSet::new()),
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
@@ -49,14 +54,16 @@ fn instance_set_of<'a>(
 
             // add instance type of method to set
             let expression_type = expression_well_formed(expression, variable_environment, type_environment, type_infos)?;
+
             let method_expression_type = InstanceType::Type { type_: expression_type.clone() };
+
             method_instance_set.insert(method_expression_type);
 
             // add method call to instance set
             let method_instance_type = InstanceType::Method {
                 type_: expression_type.clone(),
                 method_name: method,
-                type_arguments: instantiation.clone(),
+                instantiation: instantiation.clone(),
             };
 
             method_instance_set.insert(method_instance_type);
@@ -110,48 +117,104 @@ fn instance_set_of<'a>(
     }
 }
 
-fn apply_g_function<'a>(instance_set: &HashSet<InstanceType>, type_infos: &'a TypeInfos) -> Result<HashSet<InstanceType<'a>>, TypeError> {
-    let mut result_set = HashSet::new();
+fn g_function<'a, 'b>(
+    instance_set: &'a HashSet<InstanceType<'b>>,
+    delta: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+    let mut omega = HashSet::new();
 
     for element in instance_set {
-        // apply f
-        // apply m 
-        // apply i 
-        // apply s
-        
-        let element_set = match element {
-            InstanceType::Type { type_ } => f_closure(type_, type_infos)?,
-            InstanceType::Method { .. } => HashSet::new(),
-        };
+        match element {
+            InstanceType::Type { type_ } => {
+                let f_result = f_closure(type_, type_infos)?;
+                omega.extend(f_result);
+            }
+            InstanceType::Method { type_, method_name, instantiation } => {
+                let m_result = m_closure(type_, method_name, instantiation, delta, type_infos)?;
+                omega.extend(m_result);
 
-        for result_element in element_set {
-            if !instance_set.contains(&result_element) {
-                result_set.insert(result_element);
+                let i_result = i_closure(type_, method_name, instantiation, delta, type_infos, instance_set)?;
+                omega.extend(i_result);
             }
         }
     }
 
-    Ok(result_set)
+    Ok(omega)
 }
 
-fn f_closure<'a>(type_: &GenericType, type_infos: &'a TypeInfos) -> Result<HashSet<InstanceType<'a>>, TypeError> {
+fn f_closure<'a, 'b>(type_: &'a GenericType<'b>, type_infos: &'a TypeInfos<'b>) -> Result<HashSet<InstanceType<'b>>, TypeError> {
     let mut result_set = HashSet::new();
 
-    match type_ {
-        GenericType::NamedType(name, ..) => {
-            let type_info = type_infos.get(name).unwrap();
+    if let GenericType::NamedType(name, instantiation) = type_ {
+        let type_info = type_infos.get(name).unwrap();
 
-            match type_info {
-                TypeInfo::Struct { fields, .. } => {
-                    for field in fields.iter() {
-                        result_set.insert(InstanceType::Type { type_: field.type_.clone() });
-                    }
-                }
-                TypeInfo::Interface { .. } => (),
+        if let TypeInfo::Struct { bound, fields, .. } = type_info {
+            let substitution = generate_substitution(bound, instantiation)?;
+
+            let substituted_fields = substitute_struct_fields(&substitution, fields)?;
+
+            for field_binding in substituted_fields {
+                result_set.insert(InstanceType::Type { type_: field_binding.type_.clone() });
             }
         }
-        _ => _ = result_set.insert(InstanceType::Type { type_: GenericType::NumberType }),
     }
 
     Ok(result_set)
 }
+
+fn m_closure<'a, 'b>(
+    type_: &'a GenericType<'b>,
+    method_name: &'a str,
+    instantiation: &'a Vec<GenericType<'b>>,
+    delta: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+    let mut result_set = HashSet::new();
+    let methods = methods_of_type(type_, delta, type_infos)?;
+
+    if let Some(method_specification) = methods.iter().find(|method_specification| method_specification.name == method_name) {
+        let substitution = generate_substitution(&method_specification.bound, instantiation)?;
+
+        for parameter in &method_specification.parameters {
+            let substituted_parameter = substitute_type_parameter(&parameter.type_, &substitution);
+            result_set.insert(InstanceType::Type { type_: substituted_parameter });
+        }
+
+        let substituted_return_type = substitute_type_parameter(&method_specification.return_type, &substitution);
+        result_set.insert(InstanceType::Type { type_: substituted_return_type });
+    }
+
+    Ok(result_set)
+}
+
+fn i_closure<'a, 'b>(
+    type_: &'a GenericType<'b>,
+    method_name: &'a str,
+    instantiation: &'a [GenericType<'b>],
+    delta: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
+    omega: &'a HashSet<InstanceType<'b>>,
+) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+    let mut result_set = HashSet::new();
+
+    for value in omega {
+        if let InstanceType::Type { type_: instance_type } = value {
+            match is_subtype_of(instance_type, type_, delta, type_infos) {
+                Ok(_) => {
+                    result_set.insert(InstanceType::Method {
+                        type_: instance_type.clone(),
+                        method_name,
+                        instantiation: Vec::from(instantiation),
+                    });
+                }
+                Err(_) => {
+                    continue;
+                }
+            }
+        }
+    }
+
+    Ok(result_set)
+}
+

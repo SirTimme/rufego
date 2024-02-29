@@ -726,7 +726,12 @@ fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpeci
 /*
     Checks if child_type is a subtype of parent_type
  */
-pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType, type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+pub(crate) fn is_subtype_of<'a, 'b>(
+    child_type: &'a GenericType<'b>, 
+    parent_type: &'a GenericType<'b>, 
+    type_environment: &'a TypeEnvironment<'b>, 
+    type_infos: &'a TypeInfos<'b>
+) -> Result<(), TypeError> {
     match (child_type, parent_type) {
         (GenericType::NumberType, GenericType::NumberType) => return Ok(()),
         (GenericType::TypeParameter(child_name), GenericType::TypeParameter(parent_name)) => {
@@ -815,7 +820,7 @@ pub(crate) fn is_subtype_of(child_type: &GenericType, parent_type: &GenericType,
     Ok(())
 }
 
-fn methods_of_type<'a, 'b>(
+pub(crate) fn methods_of_type<'a, 'b>(
     type_: &'a GenericType<'b>,
     type_environment: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
