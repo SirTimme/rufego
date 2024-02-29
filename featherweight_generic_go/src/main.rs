@@ -57,7 +57,7 @@ fn check_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
 
 fn run_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, type_infos) {
-        Ok(value) => {
+        Ok(_) => {
             // println!("{:#?}", value);
             monomorph_program(expression, type_infos);
         },

@@ -16,27 +16,21 @@ pub(crate) enum InstanceType<'a> {
 }
 
 pub(crate) fn monomorph<'a, 'b>(expression: &'a Expression<'b>, type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
-    let mut instance_set = instance_set_of(expression, &HashMap::new(), &HashMap::new(), type_infos)?;
-    let mut instance_set_size = instance_set.len();
+    let instance_set = instance_set_of(expression, &HashMap::new(), &HashMap::new(), type_infos)?;
+    let mut omega = HashSet::new();
     let delta = TypeEnvironment::new();
-    
-    loop {
-        let iteration_result = g_function(&instance_set, &delta, type_infos)?;
 
-        for value in iteration_result {
-            if !instance_set.contains(&value) {
-                instance_set.insert(value);
-            }
-        }
+    let result = g_function(&instance_set, &delta, type_infos)?;
 
-        if instance_set.len() == instance_set_size {
-            break;
-        }
-
-        instance_set_size = instance_set.len();
+    for value in &instance_set {
+        omega.insert(value.clone());
     }
 
-    println!("{:#?}", instance_set);
+    for value in result {
+        omega.insert(value);
+    }
+
+    println!("Omega {:#?}", omega);
 
     Ok(())
 }
@@ -124,38 +118,33 @@ fn g_function<'a, 'b>(
 ) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
     let mut omega = HashSet::new();
 
-    for element in instance_set {
-        match element {
-            InstanceType::Type { type_ } => {
-                let f_result = f_closure(type_, type_infos)?;
-                omega.extend(f_result);
-            }
-            InstanceType::Method { type_, method_name, instantiation } => {
-                let m_result = m_closure(type_, method_name, instantiation, delta, type_infos)?;
-                omega.extend(m_result);
+    let f_result = f_closure(instance_set, type_infos)?;
+    omega.extend(f_result);
 
-                let i_result = i_closure(type_, method_name, instantiation, delta, type_infos, instance_set)?;
-                omega.extend(i_result);
-            }
-        }
-    }
+    let m_result = m_closure(instance_set, delta, type_infos)?;
+    omega.extend(m_result);
+
+    let i_result = i_closure(instance_set, delta, type_infos)?;
+    omega.extend(i_result);
 
     Ok(omega)
 }
 
-fn f_closure<'a, 'b>(type_: &'a GenericType<'b>, type_infos: &'a TypeInfos<'b>) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+fn f_closure<'a, 'b>(instance_set: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<HashSet<InstanceType<'b>>, TypeError> {
     let mut result_set = HashSet::new();
 
-    if let GenericType::NamedType(name, instantiation) = type_ {
-        let type_info = type_infos.get(name).unwrap();
+    for value in instance_set {
+        if let InstanceType::Type { type_: GenericType::NamedType(name, instantiation) } = value {
+            let type_info = type_infos.get(name).unwrap();
 
-        if let TypeInfo::Struct { bound, fields, .. } = type_info {
-            let substitution = generate_substitution(bound, instantiation)?;
+            if let TypeInfo::Struct { bound, fields, .. } = type_info {
+                let substitution = generate_substitution(bound, instantiation)?;
 
-            let substituted_fields = substitute_struct_fields(&substitution, fields)?;
+                let substituted_fields = substitute_struct_fields(&substitution, fields)?;
 
-            for field_binding in substituted_fields {
-                result_set.insert(InstanceType::Type { type_: field_binding.type_.clone() });
+                for field_binding in substituted_fields {
+                    result_set.insert(InstanceType::Type { type_: field_binding.type_.clone() });
+                }
             }
         }
     }
@@ -164,57 +153,74 @@ fn f_closure<'a, 'b>(type_: &'a GenericType<'b>, type_infos: &'a TypeInfos<'b>) 
 }
 
 fn m_closure<'a, 'b>(
-    type_: &'a GenericType<'b>,
-    method_name: &'a str,
-    instantiation: &'a Vec<GenericType<'b>>,
+    instance_set: &'a HashSet<InstanceType<'b>>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
 ) -> Result<HashSet<InstanceType<'b>>, TypeError> {
     let mut result_set = HashSet::new();
-    let methods = methods_of_type(type_, delta, type_infos)?;
 
-    if let Some(method_specification) = methods.iter().find(|method_specification| method_specification.name == method_name) {
-        let substitution = generate_substitution(&method_specification.bound, instantiation)?;
+    for value in instance_set {
+        if let InstanceType::Method { type_, method_name, instantiation } = value {
+            let methods = methods_of_type(type_, delta, type_infos)?;
 
-        for parameter in &method_specification.parameters {
-            let substituted_parameter = substitute_type_parameter(&parameter.type_, &substitution);
-            result_set.insert(InstanceType::Type { type_: substituted_parameter });
+            if let Some(method_specification) = methods.iter().find(|method_specification| &method_specification.name == method_name) {
+                let substitution = generate_substitution(&method_specification.bound, instantiation)?;
+
+                for parameter in &method_specification.parameters {
+                    let substituted_parameter = substitute_type_parameter(&parameter.type_, &substitution);
+                    result_set.insert(InstanceType::Type { type_: substituted_parameter });
+                }
+
+                let substituted_return_type = substitute_type_parameter(&method_specification.return_type, &substitution);
+                result_set.insert(InstanceType::Type { type_: substituted_return_type });
+            }
         }
-
-        let substituted_return_type = substitute_type_parameter(&method_specification.return_type, &substitution);
-        result_set.insert(InstanceType::Type { type_: substituted_return_type });
     }
 
     Ok(result_set)
 }
 
 fn i_closure<'a, 'b>(
-    type_: &'a GenericType<'b>,
-    method_name: &'a str,
-    instantiation: &'a [GenericType<'b>],
+    instance_set: &'a HashSet<InstanceType<'b>>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-    omega: &'a HashSet<InstanceType<'b>>,
 ) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
     let mut result_set = HashSet::new();
 
-    for value in omega {
-        if let InstanceType::Type { type_: instance_type } = value {
-            match is_subtype_of(instance_type, type_, delta, type_infos) {
-                Ok(_) => {
-                    result_set.insert(InstanceType::Method {
-                        type_: instance_type.clone(),
-                        method_name,
-                        instantiation: Vec::from(instantiation),
-                    });
-                }
-                Err(_) => {
-                    continue;
+    for first_value in instance_set {
+        if let InstanceType::Method { type_, method_name, instantiation } = first_value {
+            for second_value in instance_set {
+                if let InstanceType::Type { type_: second_type } = second_value {
+                    if let GenericType::NumberType = second_type {
+                        break;
+                    }
+
+                    let type_info = type_infos.get(second_type.name()).unwrap();
+
+                    if let TypeInfo::Interface { .. } = type_info {
+                        if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
+                            result_set.insert(InstanceType::Method {
+                                type_: second_type.clone(),
+                                method_name,
+                                instantiation: instantiation.clone(),
+                            });
+                        }
+                    }
                 }
             }
         }
     }
 
     Ok(result_set)
+}
+
+fn s_closure<'a, 'b>(
+    instance_set: &'a HashSet<InstanceType<'b>>, 
+    delta: &'a TypeEnvironment<'b>, 
+    type_infos: &'a TypeInfos<'b>
+) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+    let result_set = HashSet::<InstanceType>::new();
+    
+    todo!()
 }
 

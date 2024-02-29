@@ -2,6 +2,8 @@ package main;
 
 type Any(type) interface {}
 
+type Any2(type) interface {}
+
 type Rectangle(type V Any(), R Any()) struct {
     amount V
     client R
