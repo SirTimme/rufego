@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use parser::{Expression, GenericType, Operator};
+use parser::{Expression, GenericBinding, GenericType, Operator};
 use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeInfo, TypeInfos};
 
 #[derive(Clone, Debug)]
@@ -28,53 +28,25 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
             match value {
                 Value::Int(_) => Err(EvalError { message: format!("Tried to call method '{method}' on a number value") }),
                 Value::Struct { name, instantiation, values } => {
-                    let type_info = match type_infos.get(name) {
-                        None => {
-                            return Err(EvalError { message: format!("Type '{name}' is not declared") });
-                        }
-                        Some(type_info) => {
-                            type_info
-                        }
-                    };
+                    let (mut parameters, substituted_expression) = body_of(name, &instantiation, method, method_instantiation, type_infos)?;
 
-                    match type_info {
-                        TypeInfo::Struct { bound, methods, .. } => {
-                            let method_declaration = match methods.get(method) {
-                                None => {
-                                    return Err(EvalError { message: format!("Method {method} is not implemented for reciever type {name}") });
-                                }
-                                Some(method_declaration) => {
-                                    method_declaration
-                                }
-                            };
+                    // substitute receiver and parameter with evaluated values
+                    let mut local_variables = HashMap::new();
+                    
+                    // receiver binding is stored at index 0 so remove it
+                    let receiver_binding = parameters.remove(0);
+                    
+                    // insert receiver to local variables
+                    local_variables.insert(receiver_binding.name,Value::Struct { name, instantiation: instantiation.clone(), values: values.clone() } );
 
-                            // substitution map for receiver type
-                            let struct_substitution = generate_substitution(bound, &instantiation).unwrap();
-
-                            // substitution map for the generic method parameters
-                            let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
-
-                            let theta = concat_substitutions(&struct_substitution, &method_substitution);
-
-                            let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
-
-                            // substitute receiver and parameter with evaluated values
-                            let mut local_variables = HashMap::new();
-
-                            // insert receiver to variables
-                            local_variables.insert(method_declaration.receiver.name, Value::Struct { name, instantiation, values });
-
-                            for (index, expression) in parameter_expressions.iter().enumerate() {
-                                let parameter = method_declaration.specification.parameters.get(index).unwrap();
-                                let expression_type = evaluate(expression, variables, type_infos)?;
-
-                                local_variables.insert(parameter.name, expression_type);
-                            }
-
-                            Ok(evaluate(&substituted_expression, &local_variables, type_infos)?)
-                        }
-                        TypeInfo::Interface { .. } => Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") }),
+                    for (index, parameter_binding) in parameters.iter().enumerate() {
+                        let expression = parameter_expressions.get(index).unwrap();
+                        let expression_value = evaluate(expression, variables, type_infos)?;
+                        
+                        local_variables.insert(parameter_binding.name, expression_value);                        
                     }
+                    
+                    Ok(evaluate(&substituted_expression, &local_variables, type_infos)?)
                 }
             }
         }
@@ -223,9 +195,9 @@ fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &
         }
         Expression::TypeAssertion { expression, assert } => {
             let substituted_expression = substitute_expression(expression, substitution)?;
-            let substituted_assert = substitution.get(assert.name()).unwrap_or(assert);
+            let substituted_assert = substitute_type_parameter(assert, substitution);
 
-            Ok(Expression::TypeAssertion { expression: Box::new(substituted_expression), assert: substituted_assert.clone() })
+            Ok(Expression::TypeAssertion { expression: Box::new(substituted_expression), assert: substituted_assert })
         }
         Expression::Number { .. } => Ok(expression.clone()),
         Expression::BinOp { lhs, operator, rhs } => {
@@ -260,4 +232,38 @@ fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a Substitut
     }
 
     theta
+}
+
+pub(crate) fn body_of<'a, 'b>(
+    receiver_name: &'a str,
+    receiver_instantiation: &'a Vec<GenericType<'b>>,
+    method_name: &'a str,
+    method_instantiation: &'a Vec<GenericType<'b>>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<(Vec<GenericBinding<'a>>, Expression<'b>), EvalError> {
+    match type_infos.get(receiver_name).unwrap() {
+        TypeInfo::Struct { bound, methods, .. } => {
+            let method_declaration = methods.get(method_name).unwrap();
+            
+            let struct_substitution = generate_substitution(bound, receiver_instantiation).unwrap();
+            let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
+
+            let theta = concat_substitutions(&struct_substitution, &method_substitution);
+
+            let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
+            
+            let mut parameters = Vec::new();
+
+            parameters.push(GenericBinding { name: method_declaration.receiver.name, type_: GenericType::NamedType(receiver_name, receiver_instantiation.clone()) });
+
+            for parameter in &method_declaration.specification.parameters {
+                parameters.push(parameter.clone());
+            }
+            
+            Ok((parameters, substituted_expression))
+        }
+        TypeInfo::Interface { .. } => {
+            Err(EvalError { message: format!("Tried to read body of interface method with type '{receiver_name}' ") })
+        }
+    }
 }

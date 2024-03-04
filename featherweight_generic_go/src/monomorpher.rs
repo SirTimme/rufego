@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
+use interpreter::{body_of};
 use parser::{Expression, GenericType};
 use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, TypeEnvironment, TypeError, TypeInfo, TypeInfos, VariableEnvironment};
 
@@ -17,20 +18,21 @@ pub(crate) enum InstanceType<'a> {
 
 pub(crate) fn monomorph<'a, 'b>(expression: &'a Expression<'b>, type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
     let instance_set = instance_set_of(expression, &HashMap::new(), &HashMap::new(), type_infos)?;
-    let mut omega = HashSet::new();
     let delta = TypeEnvironment::new();
 
-    let result = g_function(&instance_set, &delta, type_infos)?;
+    let mut omega = HashSet::new();
 
-    for value in &instance_set {
-        omega.insert(value.clone());
+    loop {
+        let iteration_result = g_function(&instance_set, &delta, type_infos)?;
+
+        if omega == iteration_result {
+            break
+        }
+
+        omega = iteration_result;
     }
 
-    for value in result {
-        omega.insert(value);
-    }
-
-    println!("Omega {:#?}", omega);
+    name_mapping(&omega, type_infos)?;
 
     Ok(())
 }
@@ -127,6 +129,9 @@ fn g_function<'a, 'b>(
     let i_result = i_closure(instance_set, delta, type_infos)?;
     omega.extend(i_result);
 
+    let s_result = s_closure(instance_set, delta, type_infos)?;
+    omega.extend(s_result);
+
     Ok(omega)
 }
 
@@ -218,9 +223,59 @@ fn s_closure<'a, 'b>(
     instance_set: &'a HashSet<InstanceType<'b>>, 
     delta: &'a TypeEnvironment<'b>, 
     type_infos: &'a TypeInfos<'b>
-) -> Result<HashSet<InstanceType<'b>>, TypeError> {
-    let result_set = HashSet::<InstanceType>::new();
-    
-    todo!()
+) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+    let mut result_set = HashSet::<InstanceType>::new();
+
+    for first_value in instance_set {
+        if let InstanceType::Method { type_, method_name, instantiation: method_instantiation } = first_value {
+            for second_value in instance_set {
+                if let InstanceType::Type { type_: second_type } = second_value {
+                    match second_type {
+                        GenericType::NamedType(type_name, instantiation) => {
+                            if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
+                                let (mut parameters, substituted_expression) = body_of(
+                                    type_name, 
+                                    instantiation, 
+                                    method_name, 
+                                    method_instantiation, 
+                                    type_infos
+                                ).unwrap();
+
+                                // substitute receiver and parameter with evaluated values
+                                let mut local_context = HashMap::new();
+
+                                // receiver binding is stored at index 0 so remove it
+                                let receiver_binding = parameters.remove(0);
+
+                                // insert receiver to local variables
+                                local_context.insert(receiver_binding.name, receiver_binding.type_);
+
+                                for parameter_binding in parameters.iter() {
+                                    local_context.insert(parameter_binding.name, parameter_binding.type_.clone());
+                                }
+
+                                let omega = instance_set_of(&substituted_expression, &local_context, delta, type_infos)?;
+
+                                result_set.insert(InstanceType::Method {
+                                    type_: second_type.clone(),
+                                    method_name,
+                                    instantiation: method_instantiation.clone(),
+                                });
+
+                                result_set.extend(omega)
+                            }
+                        }
+                        _ => break,
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(result_set)
+}
+
+fn name_mapping<'a, 'b>(_omega: &'a HashSet<InstanceType<'b>>, _type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
+    Ok(())
 }
 

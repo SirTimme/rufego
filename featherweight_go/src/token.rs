@@ -38,24 +38,8 @@ pub(crate) enum Token<'a> {
     #[token(";")]
     Semicolon,
     #[token("_")]
-    Underscore,
-    #[token("!")]
-    ExclamationMark,
-    #[token("!=")]
-    ExclamationMarkEquals,
-    #[token("=")]
-    Equals,
-    #[token("==")]
-    EqualsEquals,
-    #[token(">=")]
-    GreaterThanEquals,
-    #[token("<=")]
-    LessThanEquals,
-    #[token(">")]
-    GreaterThan,
-    #[token("<")]
     LessThan,
-    #[regex("[a-zA-Z][a-zA-Z0-9]*", |lex| lex.slice())]
+    #[regex("[a-zA-Z][a-zA-Z0-9<>]*", |lex| lex.slice())]
     Identifier(&'a str),
     #[regex("[0-9]+", |lex| lex.slice().parse().ok())]
     Number(i64),
