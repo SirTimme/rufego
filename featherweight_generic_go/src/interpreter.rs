@@ -231,12 +231,12 @@ fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a Substitut
 }
 
 pub(crate) fn body_of<'a, 'b>(
-    receiver_name: &'a str,
+    receiver_name: &'b str,
     receiver_instantiation: &'a Vec<GenericType<'b>>,
     method_name: &'a str,
     method_instantiation: &'a Vec<GenericType<'b>>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<(Vec<GenericBinding<'a>>, Expression<'b>), RufegoError> {
+) -> Result<(Vec<GenericBinding<'b>>, Expression<'b>), RufegoError> {
     match type_infos.get(receiver_name).unwrap() {
         TypeInfo::Struct { bound, methods, .. } => {
             let method_declaration = methods.get(method_name).unwrap();
@@ -251,7 +251,7 @@ pub(crate) fn body_of<'a, 'b>(
             let mut parameters = Vec::new();
 
             parameters.push(GenericBinding { name: method_declaration.receiver.name, type_: GenericType::NamedType(receiver_name, receiver_instantiation.clone()) });
-
+             
             for parameter in &method_declaration.specification.parameters {
                 parameters.push(parameter.clone());
             }

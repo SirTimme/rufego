@@ -4,7 +4,6 @@ extern crate common;
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use logos::Logos;
-use common::RufegoError;
 use interpreter::{evaluate, Value};
 use monomorpher::monomorph_program;
 use parser::language::parse;
@@ -63,7 +62,7 @@ fn check_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
 
 fn run_program(expression: &Expression, context: &HashMap<&str, Value>, type_infos: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, type_infos) {
-        Ok(value) => println!("{:#?}", value),
+        Ok(value) => println!("{:?}", value),
         Err(error) => eprintln!("Runtime evaluation of expression failed:\n{}", error.message),
     }
 }
