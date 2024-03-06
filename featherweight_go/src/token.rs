@@ -25,12 +25,8 @@ pub(crate) enum Token<'a> {
     RightCurlyBrace,
     #[token(",")]
     Comma,
-    #[token("-")]
-    Minus,
     #[token("+")]
     Plus,
-    #[token("/")]
-    Slash,
     #[token("*")]
     Star,
     #[token(".")]
@@ -38,7 +34,9 @@ pub(crate) enum Token<'a> {
     #[token(";")]
     Semicolon,
     #[token("_")]
-    LessThan,
+    Underscore,
+    #[token("=")]
+    Equals,
     #[regex("[a-zA-Z][a-zA-Z0-9<>]*", |lex| lex.slice())]
     Identifier(&'a str),
     #[regex("[0-9]+", |lex| lex.slice().parse().ok())]

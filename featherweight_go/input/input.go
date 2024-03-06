@@ -1,6 +1,6 @@
 package main;
 
-type Consumer struct {
+type Consumer<Triangle> struct {
     amount int
 }
 
@@ -12,10 +12,10 @@ func (client Client) getValue() int {
     return client.amount
 }
 
-func (consumer Consumer) getValue() int {
+func (consumer Consumer<Triangle>) getValue() int {
     return consumer.amount + Client{ 12 }.getValue()
 }
 
 func main() {
-    _ = Consumer{ 21 }.getValue()
+    _ = Consumer<Triangle>{ 21 }.getValue()
 }
