@@ -1,31 +1,20 @@
 use std::collections::HashMap;
-use parser::{Expression, Operator};
-use type_checker::{is_subtype_of, Type, TypeInfo};
+use common::{FGExpression, FGType, FGValue, Operator, RufegoError, TypeInfo};
+use type_checker::{is_subtype_of};
 
-#[derive(Clone, Debug)]
-pub(crate) enum Value<'a> {
-    Int(i64),
-    Struct(&'a str, Vec<Value<'a>>),
-}
-
-#[derive(Debug)]
-pub(crate) struct EvalError {
-    pub(crate) message: String,
-}
-
-pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Value<'a>, EvalError> {
+pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a str, FGValue<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<FGValue<'a>, RufegoError> {
     match expression {
-        Expression::Variable { name } => {
+        FGExpression::Variable { name } => {
             Ok(context.get(name).expect("Variable should exist in this context").clone())
         }
-        Expression::MethodCall { expression, method, parameter_expressions } => {
+        FGExpression::MethodCall { expression, method, parameter_expressions } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
-                Value::Int(_) => {
-                    Err(EvalError { message: String::from("ERROR: Can't call a method on an integer value") })
+                FGValue::Int(_) => {
+                    Err(RufegoError { message: String::from("ERROR: Can't call a method on an integer value") })
                 }
-                Value::Struct(name, values) => {
+                FGValue::Struct(name, values) => {
                     let type_info = types.get(name).expect("Type name should exist");
 
                     match type_info {
@@ -34,7 +23,7 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
 
                             let mut local_context = HashMap::new();
 
-                            local_context.insert(method_declaration.receiver.name, Value::Struct(method_declaration.receiver.type_, values));
+                            local_context.insert(method_declaration.receiver.name, FGValue::Struct(method_declaration.receiver.type_, values));
 
                             for (index, expression) in parameter_expressions.iter().enumerate() {
                                 if let Some(parameter) = method_declaration.specification.parameters.get(index) {
@@ -48,13 +37,13 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                             Ok(evaluate(&method_declaration.body, &local_context, types)?)
                         }
                         TypeInfo::Interface(_) => {
-                            Err(EvalError { message: String::from("ERROR: Interface cant be called inside a methods body") })
+                            Err(RufegoError { message: String::from("ERROR: Interface cant be called inside a methods body") })
                         }
                     }
                 }
             }
         }
-        Expression::StructLiteral { name, field_expressions } => {
+        FGExpression::StructLiteral { name, field_expressions } => {
             let mut values = Vec::new();
 
             for expression in field_expressions {
@@ -62,16 +51,16 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                 values.push(value);
             }
 
-            Ok(Value::Struct(name, values))
+            Ok(FGValue::Struct(name, values))
         }
-        Expression::Select { expression, field } => {
+        FGExpression::Select { expression, field } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
-                Value::Int(_) => {
-                    Err(EvalError { message: String::from("An integer value doesn't have fields") })
+                FGValue::Int(_) => {
+                    Err(RufegoError { message: String::from("An integer value doesn't have fields") })
                 }
-                Value::Struct(name, struct_values) => {
+                FGValue::Struct(name, struct_values) => {
                     let type_info = types.get(name).expect("Value can only be a declared struct");
 
                     match type_info {
@@ -81,49 +70,49 @@ pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a st
                             Ok(struct_values.get(field_index).expect("Field should exists").clone())
                         }
                         TypeInfo::Interface(_) => {
-                            Err(EvalError { message: String::from("Cant instantiate an interface literal") })
+                            Err(RufegoError { message: String::from("Cant instantiate an interface literal") })
                         }
                     }
                 }
             }
         }
-        Expression::TypeAssertion { expression, assert } => {
+        FGExpression::TypeAssertion { expression, assert } => {
             let value = evaluate(expression, context, types)?;
 
             let value_type = match value {
-                Value::Int(_) => {
-                    Type::Int
+                FGValue::Int(_) => {
+                    FGType::Int
                 }
-                Value::Struct(name, _) => {
-                    Type::Struct(name)
+                FGValue::Struct(name, _) => {
+                    FGType::Struct(name)
                 }
             };
 
             match is_subtype_of(&value_type, assert, types) {
                 Ok(_) => {}
                 Err(type_error) => {
-                    return Err(EvalError { message: format!("ERROR: Runtime-Check of type assertion failed with following error {:?}", type_error) });
+                    return Err(RufegoError { message: format!("ERROR: Runtime-Check of type assertion failed with following error {:?}", type_error) });
                 }
             }
 
             Ok(value)
         }
-        Expression::Number { value } => {
-            Ok(Value::Int(*value))
+        FGExpression::Number { value } => {
+            Ok(FGValue::Int(*value))
         }
-        Expression::BinOp { lhs, operator, rhs } => {
+        FGExpression::BinOp { lhs, operator, rhs } => {
             let lhs_value = evaluate(lhs, context, types)?;
             let rhs_value = evaluate(rhs, context, types)?;
 
             match (lhs_value, rhs_value) {
-                (Value::Int(lhs), Value::Int(rhs)) => {
+                (FGValue::Int(lhs), FGValue::Int(rhs)) => {
                     match operator {
-                        Operator::Add => Ok(Value::Int(lhs + rhs)),
-                        Operator::Mul => Ok(Value::Int(lhs * rhs)),
+                        Operator::Add => Ok(FGValue::Int(lhs + rhs)),
+                        Operator::Mul => Ok(FGValue::Int(lhs * rhs)),
                     }
                 }
                 _ => {
-                    Err(EvalError { message: String::from("ERROR: LHS or RHS of a binary operation doesnt have a integer type") })
+                    Err(RufegoError { message: String::from("ERROR: LHS or RHS of a binary operation doesnt have a integer type") })
                 }
             }
         }

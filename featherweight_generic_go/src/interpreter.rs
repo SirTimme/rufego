@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use parser::{Expression, GenericBinding, GenericType, Operator};
+use common::{Operator, RufegoError};
+use parser::{Expression, GenericBinding, GenericType};
 use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeInfo, TypeInfos};
 
 #[derive(Clone, Debug)]
@@ -12,12 +13,7 @@ pub(crate) enum Value<'a> {
     },
 }
 
-#[derive(Debug)]
-pub(crate) struct EvalError {
-    pub(crate) message: String,
-}
-
-pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a HashMap<&'a str, Value<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<Value<'b>, EvalError> {
+pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a HashMap<&'a str, Value<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<Value<'b>, RufegoError> {
     match expression {
         Expression::Variable { name } => {
             Ok(variables.get(name).unwrap().clone())
@@ -26,26 +22,26 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
             let value = evaluate(expression, variables, type_infos)?;
 
             match value {
-                Value::Int(_) => Err(EvalError { message: format!("Tried to call method '{method}' on a number value") }),
+                Value::Int(_) => Err(RufegoError { message: format!("Tried to call method '{method}' on a number value") }),
                 Value::Struct { name, instantiation, values } => {
                     let (mut parameters, substituted_expression) = body_of(name, &instantiation, method, method_instantiation, type_infos)?;
 
                     // substitute receiver and parameter with evaluated values
                     let mut local_variables = HashMap::new();
-                    
+
                     // receiver binding is stored at index 0 so remove it
                     let receiver_binding = parameters.remove(0);
-                    
+
                     // insert receiver to local variables
-                    local_variables.insert(receiver_binding.name,Value::Struct { name, instantiation: instantiation.clone(), values: values.clone() } );
+                    local_variables.insert(receiver_binding.name, Value::Struct { name, instantiation: instantiation.clone(), values: values.clone() });
 
                     for (index, parameter_binding) in parameters.iter().enumerate() {
                         let expression = parameter_expressions.get(index).unwrap();
                         let expression_value = evaluate(expression, variables, type_infos)?;
-                        
-                        local_variables.insert(parameter_binding.name, expression_value);                        
+
+                        local_variables.insert(parameter_binding.name, expression_value);
                     }
-                    
+
                     Ok(evaluate(&substituted_expression, &local_variables, type_infos)?)
                 }
             }
@@ -69,12 +65,12 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
 
             match value {
                 Value::Int(_) => {
-                    Err(EvalError { message: String::from("Select expression evaluated to a number type") })
+                    Err(RufegoError { message: String::from("Select expression evaluated to a number type") })
                 }
                 Value::Struct { name, instantiation, values } => {
                     let type_info = match type_infos.get(name) {
                         None => {
-                            return Err(EvalError { message: format!("Literal '{name}' is not declared") });
+                            return Err(RufegoError { message: format!("Literal '{name}' is not declared") });
                         }
                         Some(type_info) => {
                             type_info
@@ -84,10 +80,10 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                     match type_info {
                         TypeInfo::Struct { bound, fields, .. } => {
                             // generate substitution map for struct fields
-                            let substitution = generate_substitution(bound, &instantiation).unwrap();
+                            let substitution = generate_substitution(bound, &instantiation)?;
 
                             // substitute fields with instantiation if possible
-                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields).unwrap();
+                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
 
                             for (index, field_binding) in substituted_struct_fields.iter().enumerate() {
                                 if &field_binding.name == field {
@@ -96,10 +92,10 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                                 }
                             }
 
-                            Err(EvalError { message: format!("Struct type '{name}' does not have a field named '{field}'") })
+                            Err(RufegoError { message: format!("Struct type '{name}' does not have a field named '{field}'") })
                         }
                         TypeInfo::Interface { .. } => {
-                            Err(EvalError { message: format!("Tried to select on type '{name}' which is an interface") })
+                            Err(RufegoError { message: format!("Tried to select on type '{name}' which is an interface") })
                         }
                     }
                 }
@@ -111,7 +107,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
             match is_subtype_of(&type_of(&value), assert, &HashMap::new(), type_infos) {
                 Ok(_) => {}
                 Err(error) => {
-                    return Err(EvalError { message: format!("Runtime assertion for type '{}' failed:\n{}", type_of(&value).name(), error.message) });
+                    return Err(RufegoError { message: format!("Runtime assertion for type '{}' failed:\n{}", type_of(&value).name(), error.message) });
                 }
             }
 
@@ -136,14 +132,14 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                                                 type_of(&lhs_value).name(),
                                                 type_of(&rhs_value).name()
                     );
-                    Err(EvalError { message: error_message })
+                    Err(RufegoError { message: error_message })
                 }
             }
         }
     }
 }
 
-fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<Expression<'b>, EvalError> {
+fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<Expression<'b>, RufegoError> {
     match expression {
         Expression::Variable { name } => {
             Ok(Expression::Variable { name })
@@ -240,18 +236,18 @@ pub(crate) fn body_of<'a, 'b>(
     method_name: &'a str,
     method_instantiation: &'a Vec<GenericType<'b>>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<(Vec<GenericBinding<'a>>, Expression<'b>), EvalError> {
+) -> Result<(Vec<GenericBinding<'a>>, Expression<'b>), RufegoError> {
     match type_infos.get(receiver_name).unwrap() {
         TypeInfo::Struct { bound, methods, .. } => {
             let method_declaration = methods.get(method_name).unwrap();
-            
-            let struct_substitution = generate_substitution(bound, receiver_instantiation).unwrap();
-            let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation).unwrap();
+
+            let struct_substitution = generate_substitution(bound, receiver_instantiation)?;
+            let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation)?;
 
             let theta = concat_substitutions(&struct_substitution, &method_substitution);
 
             let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
-            
+
             let mut parameters = Vec::new();
 
             parameters.push(GenericBinding { name: method_declaration.receiver.name, type_: GenericType::NamedType(receiver_name, receiver_instantiation.clone()) });
@@ -259,11 +255,11 @@ pub(crate) fn body_of<'a, 'b>(
             for parameter in &method_declaration.specification.parameters {
                 parameters.push(parameter.clone());
             }
-            
+
             Ok((parameters, substituted_expression))
         }
         TypeInfo::Interface { .. } => {
-            Err(EvalError { message: format!("Tried to read body of interface method with type '{receiver_name}' ") })
+            Err(RufegoError { message: format!("Tried to read body of interface method with type '{receiver_name}' ") })
         }
     }
 }

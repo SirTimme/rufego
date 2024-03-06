@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
+use common::{FGDeclaration, FGExpression, FGMethodDeclaration, FGProgram, FGTypeLiteral, RufegoError};
 use interpreter::{body_of};
-use parser::{Expression, GenericType};
-use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, TypeEnvironment, TypeError, TypeInfo, TypeInfos, VariableEnvironment};
+use parser::{Declaration, Expression, GenericBinding, GenericType, MethodDeclaration, Program, TypeLiteral};
+use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum InstanceType<'a> {
@@ -16,8 +17,8 @@ pub(crate) enum InstanceType<'a> {
     },
 }
 
-pub(crate) fn monomorph<'a, 'b>(expression: &'a Expression<'b>, type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
-    let instance_set = instance_set_of(expression, &HashMap::new(), &HashMap::new(), type_infos)?;
+pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<FGProgram<'b>, RufegoError> where 'a: 'b {
+    let instance_set = instance_set_of(&program.expression, &HashMap::new(), &HashMap::new(), type_infos)?;
     let delta = TypeEnvironment::new();
 
     let mut omega = HashSet::new();
@@ -26,15 +27,51 @@ pub(crate) fn monomorph<'a, 'b>(expression: &'a Expression<'b>, type_infos: &'a 
         let iteration_result = g_function(&instance_set, &delta, type_infos)?;
 
         if omega == iteration_result {
-            break
+            break;
         }
 
         omega = iteration_result;
     }
 
-    name_mapping(&omega, type_infos)?;
+    let monomorphed_expression = monomorph_expression(&program.expression, &omega, type_infos)?;
 
-    Ok(())
+    let mut monomorphed_declarations = Vec::new();
+
+    for declaration in &program.declarations {
+        let monomorphed_declaration = monomorph_declaration(declaration, &omega, type_infos)?;
+        monomorphed_declarations.push(monomorphed_declaration);
+    }
+
+    let monomorphed_program = FGProgram { declarations: monomorphed_declarations, expression: Box::from(monomorphed_expression) };
+
+    Ok(monomorphed_program)
+}
+
+fn monomorph_expression<'a, 'b>(expression: &'a Expression<'b>, omega: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<FGExpression<'b>, RufegoError> {
+    match expression {
+        Expression::Variable { name } => { Ok(FGExpression::Variable { name }) }
+        Expression::MethodCall { .. } => {
+            todo!()
+        }
+        Expression::StructLiteral { .. } => {
+            todo!()
+        }
+        Expression::Select { .. } => {
+            todo!()
+        }
+        Expression::TypeAssertion { .. } => {
+            todo!()
+        }
+        Expression::Number { value } => {
+            Ok(FGExpression::Number { value: value.clone() })
+        }
+        Expression::BinOp { lhs, operator, rhs } => {
+            let lhs_monomorphed = monomorph_expression(lhs, omega, type_infos)?;
+            let rhs_monomorphed = monomorph_expression(rhs, omega, type_infos)?;
+
+            Ok(FGExpression::BinOp { lhs: Box::from(lhs_monomorphed), operator: operator.clone(), rhs: Box::from(rhs_monomorphed) })
+        }
+    }
 }
 
 fn instance_set_of<'a, 'b>(
@@ -42,7 +79,7 @@ fn instance_set_of<'a, 'b>(
     variable_environment: &'a VariableEnvironment<'b>,
     type_environment: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+) -> Result<HashSet<InstanceType<'b>>, RufegoError> {
     match expression {
         Expression::Variable { .. } => Ok(HashSet::new()),
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
@@ -117,7 +154,7 @@ fn g_function<'a, 'b>(
     instance_set: &'a HashSet<InstanceType<'b>>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+) -> Result<HashSet<InstanceType<'b>>, RufegoError> {
     let mut omega = HashSet::new();
 
     let f_result = f_closure(instance_set, type_infos)?;
@@ -135,7 +172,7 @@ fn g_function<'a, 'b>(
     Ok(omega)
 }
 
-fn f_closure<'a, 'b>(instance_set: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+fn f_closure<'a, 'b>(instance_set: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<HashSet<InstanceType<'b>>, RufegoError> {
     let mut result_set = HashSet::new();
 
     for value in instance_set {
@@ -161,7 +198,7 @@ fn m_closure<'a, 'b>(
     instance_set: &'a HashSet<InstanceType<'b>>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<HashSet<InstanceType<'b>>, TypeError> {
+) -> Result<HashSet<InstanceType<'b>>, RufegoError> {
     let mut result_set = HashSet::new();
 
     for value in instance_set {
@@ -189,7 +226,7 @@ fn i_closure<'a, 'b>(
     instance_set: &'a HashSet<InstanceType<'b>>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+) -> Result<HashSet<InstanceType<'b>>, RufegoError> {
     let mut result_set = HashSet::new();
 
     for first_value in instance_set {
@@ -220,10 +257,10 @@ fn i_closure<'a, 'b>(
 }
 
 fn s_closure<'a, 'b>(
-    instance_set: &'a HashSet<InstanceType<'b>>, 
-    delta: &'a TypeEnvironment<'b>, 
-    type_infos: &'a TypeInfos<'b>
-) -> Result<HashSet<InstanceType<'b>>, TypeError> where 'a: 'b {
+    instance_set: &'a HashSet<InstanceType<'b>>,
+    delta: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<HashSet<InstanceType<'b>>, RufegoError> where 'a:'b {
     let mut result_set = HashSet::<InstanceType>::new();
 
     for first_value in instance_set {
@@ -234,11 +271,11 @@ fn s_closure<'a, 'b>(
                         GenericType::NamedType(type_name, instantiation) => {
                             if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
                                 let (mut parameters, substituted_expression) = body_of(
-                                    type_name, 
-                                    instantiation, 
-                                    method_name, 
-                                    method_instantiation, 
-                                    type_infos
+                                    type_name,
+                                    instantiation,
+                                    method_name,
+                                    method_instantiation,
+                                    type_infos,
                                 ).unwrap();
 
                                 // substitute receiver and parameter with evaluated values
@@ -275,7 +312,34 @@ fn s_closure<'a, 'b>(
     Ok(result_set)
 }
 
-fn name_mapping<'a, 'b>(_omega: &'a HashSet<InstanceType<'b>>, _type_infos: &'a TypeInfos<'b>) -> Result<(), TypeError> {
-    Ok(())
+fn monomorph_declaration<'a, 'b>(declaration: &'a Declaration<'b>, omega: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<FGDeclaration<'b>, RufegoError> {
+    match declaration {
+        Declaration::Type { name, bound, literal } => {
+            let monomorphed_type_declaration = monomorph_type_declaration(name, bound, literal, omega, type_infos)?;
+            Ok(FGDeclaration::Type { name, literal: monomorphed_type_declaration })
+        }
+        Declaration::Method(method_declaration) => {
+            let monomorphed_method = monomorph_method_declaration(method_declaration, omega, type_infos)?;
+            Ok(FGDeclaration::Method(monomorphed_method))
+        }
+    }
+}
+
+fn monomorph_method_declaration<'a, 'b>(
+    method_declaration: &'a MethodDeclaration<'b>,
+    omega: &'a HashSet<InstanceType<'b>>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<FGMethodDeclaration<'b>, RufegoError> {
+    todo!()
+}
+
+fn monomorph_type_declaration<'a, 'b>(
+    name: &'a str,
+    bound: &'a Vec<GenericBinding<'b>>,
+    literal: &'a TypeLiteral<'b>,
+    omega: &'a HashSet<InstanceType<'b>>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<FGTypeLiteral<'b>, RufegoError> {
+    todo!()
 }
 

@@ -1,5 +1,6 @@
 extern crate logos;
 extern crate peg;
+extern crate common;
 
 mod token;
 mod parser;
@@ -9,11 +10,11 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use interpreter::{evaluate, Value};
+use common::{FGExpression, FGProgram, FGValue, TypeInfo};
+use interpreter::{evaluate};
 use parser::language::parse;
-use parser::{Expression, Program};
 use token::{LexerError, Token};
-use type_checker::{build_type_infos, check_program, TypeInfo};
+use type_checker::{build_type_infos, check_program};
 
 fn main() {
     read_input("featherweight_go/input/input.go");
@@ -46,7 +47,7 @@ fn parse_tokens(tokens: &[Token]) {
     }
 }
 
-fn create_type_infos(program: &Program) {
+fn create_type_infos(program: &FGProgram) {
     match build_type_infos(program) {
         Ok(type_infos) => typecheck_program(program, &type_infos),
         Err(type_info_error) => {
@@ -55,7 +56,7 @@ fn create_type_infos(program: &Program) {
     }
 }
 
-fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
+fn typecheck_program(program: &FGProgram, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
         Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
         Err(type_error) => {
@@ -64,7 +65,7 @@ fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     }
 }
 
-fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
+fn evaluate_program(expression: &FGExpression, context: &HashMap<&str, FGValue>, types: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, types) {
         Ok(value) => {
             println!("Program evaluates to {:?}", value);

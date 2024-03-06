@@ -1,4 +1,5 @@
 use std::collections::{HashMap};
+use common::RufegoError;
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
 // TODO Self recursion in struct
@@ -30,12 +31,7 @@ pub(crate) enum TypeInfo<'a> {
     },
 }
 
-#[derive(Debug)]
-pub(crate) struct TypeError {
-    pub(crate) message: String,
-}
-
-pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, TypeError> {
+pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, RufegoError> {
     let mut type_infos = HashMap::new();
 
     // collect info for type declarations
@@ -44,7 +40,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
             // type with this name already declared?
             if type_infos.contains_key(type_name) {
                 let error_message = format!("Type declaration '{type_name}' is not well-formed: Type '{type_name}' was already declared");
-                return Err(TypeError { message: error_message });
+                return Err(RufegoError { message: error_message });
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields } => TypeInfo::Struct { bound, fields, methods: HashMap::new() },
@@ -65,7 +61,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
                                                 method.specification.name,
                                                 method.receiver.type_
                     );
-                    return Err(TypeError { message: error_message });
+                    return Err(RufegoError { message: error_message });
                 }
                 Some(TypeInfo::Struct { methods, .. }) => {
                     // is the method already declared?
@@ -74,7 +70,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
                                                     method.specification.name,
                                                     method.receiver.type_
                         );
-                        return Err(TypeError { message: error_message });
+                        return Err(RufegoError { message: error_message });
                     }
                 }
                 None => {
@@ -82,7 +78,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
                                                 method.specification.name,
                                                 method.receiver.type_
                     );
-                    return Err(TypeError { message: error_message });
+                    return Err(RufegoError { message: error_message });
                 }
             }
         }
@@ -91,7 +87,7 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
     Ok(type_infos)
 }
 
-pub(crate) fn program_well_formed<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<GenericType<'b>, TypeError> {
+pub(crate) fn program_well_formed<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<GenericType<'b>, RufegoError> {
     // declarations well-formed?
     for declaration in &program.declarations {
         declaration_well_formed(declaration, type_infos)?;
@@ -100,25 +96,25 @@ pub(crate) fn program_well_formed<'a, 'b>(program: &'a Program<'b>, type_infos: 
     // body expression well-formed in the empty type environment and empty variable environment?
     match expression_well_formed(&program.expression, &HashMap::new(), &HashMap::new(), type_infos) {
         Ok(type_) => Ok(type_),
-        Err(error) => {
-            Err(TypeError { message: format!("Body expression of 'main' is not well-formed:\n{}", error.message) })
+        Err(rufego_error) => {
+            Err(RufegoError { message: format!("Body expression of 'main' is not well-formed:\n{}", rufego_error.message) })
         }
     }
 }
 
-fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
         // method declaration well-formed?
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
             match method_well_formed(receiver, specification, body, type_infos) {
                 Ok(_) => {}
-                Err(error) => {
+                Err(rufego_error) => {
                     let error_message = format!("Method '{}' for receiver type '{}' is not well-formed:\n{}",
                                                 specification.name,
                                                 receiver.type_,
-                                                error.message
+                                                rufego_error.message
                     );
-                    return Err(TypeError { message: error_message });
+                    return Err(RufegoError { message: error_message });
                 }
             }
         }
@@ -133,16 +129,16 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
 
             match formal_type_well_formed(&HashMap::new(), &psi, type_infos) {
                 Ok(_) => {}
-                Err(error) => {
-                    return Err(TypeError { message: format!("Type formals of literal '{name}' is not well-formed:\n{}", error.message) });
+                Err(rufego_error) => {
+                    return Err(RufegoError { message: format!("Type formals of literal '{name}' is not well-formed:\n{}", rufego_error.message) });
                 }
             }
 
             // type literal well-formed?
             match type_literal_well_formed(literal, &psi, type_infos) {
                 Ok(_) => {}
-                Err(error) => {
-                    return Err(TypeError { message: format!("Literal '{name}' is not well-formed:\n{}", error.message) });
+                Err(rufego_error) => {
+                    return Err(RufegoError { message: format!("Literal '{name}' is not well-formed:\n{}", rufego_error.message) });
                 }
             }
         }
@@ -151,7 +147,7 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
     Ok(())
 }
 
-fn type_literal_well_formed(literal: &TypeLiteral, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn type_literal_well_formed(literal: &TypeLiteral, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     match literal {
         TypeLiteral::Struct { fields } => struct_well_formed(fields, literal_environment, type_infos)?,
         TypeLiteral::Interface { methods } => interface_well_formed(methods, literal_environment, type_infos)?,
@@ -160,11 +156,11 @@ fn type_literal_well_formed(literal: &TypeLiteral, literal_environment: &TypeEnv
     Ok(())
 }
 
-fn struct_well_formed(fields: &[GenericBinding], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn struct_well_formed(fields: &[GenericBinding], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     for (index, field) in fields.iter().enumerate() {
         // field names distinct?
         if fields.iter().skip(index + 1).any(|binding| binding.name == field.name) {
-            return Err(TypeError { message: format!("Duplicate field with name '{}'", field.name) });
+            return Err(RufegoError { message: format!("Duplicate field with name '{}'", field.name) });
         }
 
         // field type well-formed in the literal environment?
@@ -174,18 +170,18 @@ fn struct_well_formed(fields: &[GenericBinding], type_environment: &TypeEnvironm
     Ok(())
 }
 
-fn interface_well_formed(methods: &[MethodSpecification], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn interface_well_formed(methods: &[MethodSpecification], type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     for (index, method_specification) in methods.iter().enumerate() {
         // name of method specification unique?
         if methods.iter().skip(index + 1).any(|method_spec| method_spec.name == method_specification.name) {
-            return Err(TypeError { message: format!("Duplicate method specification with name '{}'", method_specification.name) });
+            return Err(RufegoError { message: format!("Duplicate method specification with name '{}'", method_specification.name) });
         }
 
         // method specification well-formed in the literal environment?
         match method_specification_well_formed(method_specification, type_environment, type_infos) {
             Ok(_) => {}
-            Err(error) => {
-                return Err(TypeError { message: format!("Method specification '{}' is not well-formed: {}", method_specification.name, error.message) });
+            Err(rufego_error) => {
+                return Err(RufegoError { message: format!("Method specification '{}' is not well-formed: {}", method_specification.name, rufego_error.message) });
             }
         }
     }
@@ -193,7 +189,7 @@ fn interface_well_formed(methods: &[MethodSpecification], type_environment: &Typ
     Ok(())
 }
 
-fn method_specification_well_formed(specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn method_specification_well_formed(specification: &MethodSpecification, literal_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     // build environment for type formals of method specification
     let mut method_environment = HashMap::new();
 
@@ -207,20 +203,20 @@ fn method_specification_well_formed(specification: &MethodSpecification, literal
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // name of method parameter distinct?
         if specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-            return Err(TypeError { message: format!("Duplicate method parameter with name '{}'", parameter.name) });
+            return Err(RufegoError { message: format!("Duplicate method parameter with name '{}'", parameter.name) });
         }
 
         // parameter type well-formed in the concatenated environment?
         match type_well_formed(&parameter.type_, &delta, type_infos) {
             Ok(_) => {}
-            Err(error) => {
-                let error_msg = format!("Method parameter '{}' with type '{}' is not well-formed:\n{}",
-                                        parameter.name,
-                                        parameter.type_.name(),
-                                        error.message
+            Err(rufego_error) => {
+                let error_message = format!("Method parameter '{}' with type '{}' is not well-formed:\n{}",
+                                            parameter.name,
+                                            parameter.type_.name(),
+                                            rufego_error.message
                 );
 
-                return Err(TypeError { message: error_msg });
+                return Err(RufegoError { message: error_message });
             }
         }
     }
@@ -228,25 +224,25 @@ fn method_specification_well_formed(specification: &MethodSpecification, literal
     // return type well-formed in the concatenated environment?
     match type_well_formed(&specification.return_type, &delta, type_infos) {
         Ok(_) => {}
-        Err(error) => {
-            return Err(TypeError { message: format!("Return type '{}' is not well-formed:\n{}", specification.return_type.name(), error.message) });
+        Err(rufego_error) => {
+            return Err(RufegoError { message: format!("Return type '{}' is not well-formed:\n{}", specification.return_type.name(), rufego_error.message) });
         }
     }
 
     Ok(())
 }
 
-fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecification, body: &Expression, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // name of receiver type and parameter distinct?
         if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|binding| binding.name == parameter.name) {
-            return Err(TypeError { message: format!("Duplicate method parameter with name '{}'", parameter.name) });
+            return Err(RufegoError { message: format!("Duplicate method parameter with name '{}'", parameter.name) });
         }
     }
 
     // receiver type declared?
     if type_infos.get(receiver.type_).is_none() {
-        return Err(TypeError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
+        return Err(RufegoError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
     }
 
     // build environment for type formals of receiver type
@@ -295,28 +291,28 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
         Ok(expression_type) => {
             expression_type
         }
-        Err(error) => {
-            return Err(TypeError { message: format!("Body expression of method is not well-formed:\n{}", error.message) });
+        Err(rufego_error) => {
+            return Err(RufegoError { message: format!("Body expression of method is not well-formed:\n{}", rufego_error.message) });
         }
     };
 
     // body expression subtype of return type in the concatenated environment?
     match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
         Ok(_) => {}
-        Err(error) => {
+        Err(rufego_error) => {
             let error_message = format!("Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
                                         expression_type.name(),
                                         specification.return_type.name(),
-                                        error.message
+                                        rufego_error.message
             );
-            return Err(TypeError { message: error_message });
+            return Err(RufegoError { message: error_message });
         }
     }
 
     Ok(())
 }
 
-fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             type_parameter_well_formed(type_parameter, delta)?
@@ -327,7 +323,7 @@ fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &T
             // instantiated types satisfy type bounds of type formals?
             let type_info = match type_infos.get(type_name) {
                 None => {
-                    return Err(TypeError { message: format!("Type '{type_name}' is not declared in this context") });
+                    return Err(RufegoError { message: format!("Type '{type_name}' is not declared in this context") });
                 }
                 Some(type_info) => {
                     type_info
@@ -349,14 +345,14 @@ fn type_well_formed(type_: &GenericType, delta: &TypeEnvironment, type_infos: &T
     Ok(())
 }
 
-fn type_parameter_well_formed(type_parameter: &str, type_environment: &TypeEnvironment) -> Result<(), TypeError> {
+fn type_parameter_well_formed(type_parameter: &str, type_environment: &TypeEnvironment) -> Result<(), RufegoError> {
     match type_environment.get(type_parameter) {
-        None => Err(TypeError { message: format!("Type parameter '{type_parameter}' is not declared in this context") }),
+        None => Err(RufegoError { message: format!("Type parameter '{type_parameter}' is not declared in this context") }),
         Some(_) => Ok(())
     }
 }
 
-fn type_actual_well_formed(instantiation: &Vec<GenericType>, type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), TypeError> {
+fn type_actual_well_formed(instantiation: &Vec<GenericType>, type_environment: &TypeEnvironment, type_infos: &TypeInfos) -> Result<(), RufegoError> {
     // instantiation types well-formed?
     for instantiated_type in instantiation {
         type_well_formed(instantiated_type, type_environment, type_infos)?;
@@ -365,7 +361,7 @@ fn type_actual_well_formed(instantiation: &Vec<GenericType>, type_environment: &
     Ok(())
 }
 
-fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos) -> Result<TypeEnvironment<'a>, TypeError> {
+fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos) -> Result<TypeEnvironment<'a>, RufegoError> {
     let mut concat_environment = HashMap::new();
 
     // insert types of outer environment to concatenated type environment
@@ -376,7 +372,7 @@ fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironm
     for (name, type_) in inner.iter() {
         // duplicate type parameter names?
         match concat_environment.insert(*name, type_.clone()) {
-            Some(_) => return Err(TypeError { message: format!("Duplicate type parameter with name '{name}'") }),
+            Some(_) => return Err(RufegoError { message: format!("Duplicate type parameter with name '{name}'") }),
             None => continue,
         }
     }
@@ -389,7 +385,7 @@ fn formal_type_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironm
     Ok(concat_environment)
 }
 
-fn nested_type_formals_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos) -> Result<TypeEnvironment<'a>, TypeError> {
+fn nested_type_formals_well_formed<'a>(outer: &TypeEnvironment<'a>, inner: &TypeEnvironment<'a>, type_infos: &TypeInfos) -> Result<TypeEnvironment<'a>, RufegoError> {
     let _ = formal_type_well_formed(&HashMap::new(), outer, type_infos)?;
     let delta = formal_type_well_formed(outer, inner, type_infos)?;
 
@@ -401,13 +397,13 @@ pub(crate) fn expression_well_formed<'a, 'b>(
     variable_environment: &'a VariableEnvironment<'b>,
     delta: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<GenericType<'b>, TypeError> {
+) -> Result<GenericType<'b>, RufegoError> {
     match expression {
         Expression::Variable { name: variable_name } => {
             // variable declared in environment?
             match variable_environment.get(variable_name) {
                 Some(var_type) => Ok(var_type.clone()),
-                None => Err(TypeError { message: format!("Current context does not have a variable with name '{variable_name}'") })
+                None => Err(RufegoError { message: format!("Current context does not have a variable with name '{variable_name}'") })
             }
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
@@ -418,7 +414,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
 
             let method_specification = match type_methods.iter().find(|method_spec| &method_spec.name == method) {
                 None => {
-                    return Err(TypeError { message: format!("Method '{method}' is not implemented for receiver type '{}'", expression_type.name()) });
+                    return Err(RufegoError { message: format!("Method '{method}' is not implemented for receiver type '{}'", expression_type.name()) });
                 }
                 Some(method_specification) => {
                     method_specification
@@ -444,13 +440,13 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                 // actual parameter type subtype from declared parameter type?
                 match is_subtype_of(&actual_parameter_type, &declared_parameter_type, delta, type_infos) {
                     Ok(_) => {}
-                    Err(error) => {
+                    Err(rufego_error) => {
                         let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
                                                     actual_parameter_type.name(),
                                                     declared_parameter_type.name(),
-                                                    error.message
+                                                    rufego_error.message
                         );
-                        return Err(TypeError { message: error_message });
+                        return Err(RufegoError { message: error_message });
                     }
                 }
             }
@@ -463,14 +459,14 @@ pub(crate) fn expression_well_formed<'a, 'b>(
             // struct type well-formed?
             match type_well_formed(&struct_type, delta, type_infos) {
                 Ok(_) => {}
-                Err(error) => {
-                    return Err(TypeError { message: format!("Struct literal '{name}' is not well-formed:\n{}", error.message) });
+                Err(rufego_error) => {
+                    return Err(RufegoError { message: format!("Struct literal '{name}' is not well-formed:\n{}", rufego_error.message) });
                 }
             }
 
             let type_info = match type_infos.get(name) {
                 None => {
-                    return Err(TypeError { message: format!("Struct literal '{name}' is not declared") });
+                    return Err(RufegoError { message: format!("Struct literal '{name}' is not declared") });
                 }
                 Some(type_info) => {
                     type_info
@@ -484,7 +480,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                                                     fields.len(),
                                                     field_expressions.len()
                         );
-                        return Err(TypeError { message: error_message });
+                        return Err(RufegoError { message: error_message });
                     }
 
                     let mut field_expression_types = Vec::new();
@@ -506,19 +502,19 @@ pub(crate) fn expression_well_formed<'a, 'b>(
 
                         match is_subtype_of(expression_type, &substituted_field.type_, delta, type_infos) {
                             Ok(_) => {}
-                            Err(error) => {
+                            Err(rufego_error) => {
                                 let error_message = format!("Expression for field '{}' of struct literal '{}' is not a subtype of declared field type:\n{}",
                                                             substituted_field.name,
                                                             name,
-                                                            error.message);
-                                return Err(TypeError { message: error_message });
+                                                            rufego_error.message);
+                                return Err(RufegoError { message: error_message });
                             }
                         }
                     }
 
                     Ok(struct_type)
                 }
-                TypeInfo::Interface { .. } => Err(TypeError { message: format!("Constructed literal '{name}' is an interface type") }),
+                TypeInfo::Interface { .. } => Err(RufegoError { message: format!("Constructed literal '{name}' is an interface type") }),
             }
         }
         Expression::Select { expression, field: field_var } => {
@@ -539,15 +535,15 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                             }
                         }
 
-                        Err(TypeError { message: format!("Struct type '{type_name}' does not have a field named '{field_var}'") })
+                        Err(RufegoError { message: format!("Struct type '{type_name}' does not have a field named '{field_var}'") })
                     }
                     TypeInfo::Interface { .. } => {
-                        Err(TypeError { message: format!("Select expression evaluates to interface type '{type_name}'") })
+                        Err(RufegoError { message: format!("Select expression evaluates to interface type '{type_name}'") })
                     }
                 };
             }
 
-            Err(TypeError { message: format!("Select expression are only allowed on named types, expression evaluated to '{}' instead", expression_type.name()) })
+            Err(RufegoError { message: format!("Select expression are only allowed on named types, expression evaluated to '{}' instead", expression_type.name()) })
         }
         Expression::TypeAssertion { expression, assert } => {
             // evaluate body expression
@@ -584,7 +580,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                     match assert {
                         GenericType::NumberType => {}
                         _ => {
-                            return Err(TypeError { message: format!("Type assertion is not well-formed\nTried to assert '{}' on type '{}'", assert.name(), expression_type.name()) });
+                            return Err(RufegoError { message: format!("Type assertion is not well-formed\nTried to assert '{}' on type '{}'", assert.name(), expression_type.name()) });
                         }
                     }
                 }
@@ -604,23 +600,23 @@ pub(crate) fn expression_well_formed<'a, 'b>(
 
             match (&lhs_type, &rhs_type) {
                 (GenericType::NumberType, GenericType::NumberType) => Ok(GenericType::NumberType),
-                _ => Err(TypeError { message: format!("Binary operation is not well-formed:\nLHS was type '{}', RHS was type '{}'", lhs_type.name(), rhs_type.name()) })
+                _ => Err(RufegoError { message: format!("Binary operation is not well-formed:\nLHS was type '{}', RHS was type '{}'", lhs_type.name(), rhs_type.name()) })
             }
         }
     }
 }
 
-fn bounds_of_type<'a>(type_: &'a GenericType, type_infos: &'a TypeInfos, delta: &'a TypeEnvironment) -> Result<&'a GenericType<'a>, TypeError> {
+fn bounds_of_type<'a>(type_: &'a GenericType, type_infos: &'a TypeInfos, delta: &'a TypeEnvironment) -> Result<&'a GenericType<'a>, RufegoError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             match delta.get(type_parameter) {
-                None => Err(TypeError { message: format!("Type parameter '{type_parameter}' is not declared in this context") }),
+                None => Err(RufegoError { message: format!("Type parameter '{type_parameter}' is not declared in this context") }),
                 Some(type_bound) => Ok(type_bound)
             }
         }
         GenericType::NamedType(name, _) => {
             match type_infos.get(name) {
-                None => Err(TypeError { message: format!("Type '{name}' is not declared") }),
+                None => Err(RufegoError { message: format!("Type '{name}' is not declared") }),
                 Some(_) => Ok(type_)
             }
         }
@@ -628,12 +624,12 @@ fn bounds_of_type<'a>(type_: &'a GenericType, type_infos: &'a TypeInfos, delta: 
     }
 }
 
-pub(crate) fn generate_substitution<'a, 'b>(type_formals: &'a Vec<GenericBinding<'b>>, instantiation: &'a Vec<GenericType<'b>>) -> Result<SubstitutionMap<'b>, TypeError> {
+pub(crate) fn generate_substitution<'a, 'b>(type_formals: &'a Vec<GenericBinding<'b>>, instantiation: &'a Vec<GenericType<'b>>) -> Result<SubstitutionMap<'b>, RufegoError> {
     let mut generated_substitution = HashMap::new();
 
     // correct amount of type parameters supplied?
     if type_formals.len() != instantiation.len() {
-        return Err(TypeError { message: format!("Type formals consists of '{}' parameters but '{}' parameters were provided", type_formals.len(), instantiation.len()) });
+        return Err(RufegoError { message: format!("Type formals consists of '{}' parameters but '{}' parameters were provided", type_formals.len(), instantiation.len()) });
     }
 
     // substitute type formals with type actuals and check bound
@@ -650,7 +646,7 @@ fn generate_substitution_with_bound_check<'a, 'b>(
     instantiation: &'a Vec<GenericType<'b>>,
     type_environment: &TypeEnvironment,
     type_infos: &TypeInfos,
-) -> Result<SubstitutionMap<'b>, TypeError> {
+) -> Result<SubstitutionMap<'b>, RufegoError> {
     let generated_substitution = generate_substitution(type_formals, instantiation)?;
 
     for (index, actual_type) in instantiation.iter().enumerate() {
@@ -687,7 +683,7 @@ pub(crate) fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, subs
     }
 }
 
-pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap<'b>, fields: &'a [GenericBinding<'b>]) -> Result<Vec<GenericBinding<'b>>, TypeError> {
+pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap<'b>, fields: &'a [GenericBinding<'b>]) -> Result<Vec<GenericBinding<'b>>, RufegoError> {
     let mut substituted_fields = Vec::new();
 
     for field_binding in fields.iter() {
@@ -698,7 +694,7 @@ pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap
     Ok(substituted_fields)
 }
 
-fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpecification<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<MethodSpecification<'b>, TypeError> {
+fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpecification<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<MethodSpecification<'b>, RufegoError> {
     let mut substituted_bound = Vec::new();
 
     for binding in &method_specification.bound {
@@ -731,19 +727,19 @@ pub(crate) fn is_subtype_of<'a, 'b>(
     parent_type: &'a GenericType<'b>, 
     type_environment: &'a TypeEnvironment<'b>, 
     type_infos: &'a TypeInfos<'b>
-) -> Result<(), TypeError> {
+) -> Result<(), RufegoError> {
     match (child_type, parent_type) {
         (GenericType::NumberType, GenericType::NumberType) => return Ok(()),
         (GenericType::TypeParameter(child_name), GenericType::TypeParameter(parent_name)) => {
             if child_name == parent_name {
                 return Ok(());
             }
-            return Err(TypeError { message: format!("Type parameter '{child_name}' can not be a subtype of type parameter '{parent_name}'") });
+            return Err(RufegoError { message: format!("Type parameter '{child_name}' can not be a subtype of type parameter '{parent_name}'") });
         }
         (GenericType::NamedType(child_name, _), GenericType::NamedType(parent_name, _)) => {
             let child_type_info = match type_infos.get(child_name) {
                 None => {
-                    return Err(TypeError { message: format!("Child type '{child_name}' is not declared") });
+                    return Err(RufegoError { message: format!("Child type '{child_name}' is not declared") });
                 }
                 Some(type_info) => {
                     type_info
@@ -752,7 +748,7 @@ pub(crate) fn is_subtype_of<'a, 'b>(
 
             let parent_type_info = match type_infos.get(parent_name) {
                 None => {
-                    return Err(TypeError { message: format!("Parent type '{parent_name}' is not declared") });
+                    return Err(RufegoError { message: format!("Parent type '{parent_name}' is not declared") });
                 }
                 Some(type_info) => {
                     type_info
@@ -764,7 +760,7 @@ pub(crate) fn is_subtype_of<'a, 'b>(
                     if child_name == parent_name {
                         return Ok(());
                     }
-                    return Err(TypeError { message: format!("Struct type '{child_name}' can not be a subtype of struct type '{parent_name}'") });
+                    return Err(RufegoError { message: format!("Struct type '{child_name}' can not be a subtype of struct type '{parent_name}'") });
                 }
                 (_, TypeInfo::Interface { .. }) => {
                     let child_methods = methods_of_type(child_type, type_environment, type_infos)?;
@@ -775,19 +771,19 @@ pub(crate) fn is_subtype_of<'a, 'b>(
                             let error_message = format!("Method '{}' of parent type '{parent_name}' is not implemented for child type '{child_name}'",
                                                         parent_method.name
                             );
-                            return Err(TypeError { message: error_message });
+                            return Err(RufegoError { message: error_message });
                         }
                     }
                 }
                 _ => {
-                    return Err(TypeError { message: format!("Type '{child_name}' can not be a subtype of struct type '{parent_name}'") });
+                    return Err(RufegoError { message: format!("Type '{child_name}' can not be a subtype of struct type '{parent_name}'") });
                 }
             }
         }
         (GenericType::TypeParameter(child_type_parameter), GenericType::NamedType(parent_name, _)) => {
             let parent_type_info = match type_infos.get(parent_name) {
                 None => {
-                    return Err(TypeError { message: format!("Parent type '{parent_name}' is not declared") });
+                    return Err(RufegoError { message: format!("Parent type '{parent_name}' is not declared") });
                 }
                 Some(type_info) => {
                     type_info
@@ -796,7 +792,7 @@ pub(crate) fn is_subtype_of<'a, 'b>(
 
             match parent_type_info {
                 TypeInfo::Struct { .. } => {
-                    return Err(TypeError { message: format!("Type parameter '{child_type_parameter}' can not be a subtype of struct type '{parent_name}'") });
+                    return Err(RufegoError { message: format!("Type parameter '{child_type_parameter}' can not be a subtype of struct type '{parent_name}'") });
                 }
                 TypeInfo::Interface { .. } => {
                     let child_methods = methods_of_type(child_type, type_environment, type_infos)?;
@@ -808,13 +804,13 @@ pub(crate) fn is_subtype_of<'a, 'b>(
                                                         parent_method.name,
                                                         child_type.name()
                             );
-                            return Err(TypeError { message: error_message });
+                            return Err(RufegoError { message: error_message });
                         }
                     }
                 }
             }
         }
-        _ => return Err(TypeError { message: format!("Child type '{}' is not a subtype of parent type '{}'", child_type.name(), parent_type.name()) })
+        _ => return Err(RufegoError { message: format!("Child type '{}' is not a subtype of parent type '{}'", child_type.name(), parent_type.name()) })
     }
 
     Ok(())
@@ -824,12 +820,12 @@ pub(crate) fn methods_of_type<'a, 'b>(
     type_: &'a GenericType<'b>,
     type_environment: &'a TypeEnvironment<'b>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<Vec<MethodSpecification<'b>>, TypeError> {
+) -> Result<Vec<MethodSpecification<'b>>, RufegoError> {
     match type_ {
         GenericType::TypeParameter(type_parameter) => {
             return match type_environment.get(type_parameter) {
                 None => {
-                    Err(TypeError { message: format!("Type parameter '{type_parameter}' is not declared in this context") })
+                    Err(RufegoError { message: format!("Type parameter '{type_parameter}' is not declared in this context") })
                 }
                 Some(type_bound) => {
                     methods_of_type(type_bound, type_environment, type_infos)
@@ -839,7 +835,7 @@ pub(crate) fn methods_of_type<'a, 'b>(
         GenericType::NamedType(type_name, instantiation) => {
             match type_infos.get(type_name) {
                 None => {
-                    Err(TypeError { message: format!("Type '{type_name}' is not declared") })
+                    Err(RufegoError { message: format!("Type '{type_name}' is not declared") })
                 }
                 Some(type_info) => {
                     match type_info {

@@ -1,4 +1,6 @@
 use Token;
+use std::fmt::Write;
+use common::Operator;
 
 peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {
@@ -171,16 +173,62 @@ pub(crate) enum Expression<'a> {
     },
 }
 
+impl<'a> Expression<'a> {
+    pub(crate) fn as_str(&self) -> String {
+        match self {
+            Expression::Variable { name } => {
+                name.to_string()
+            }
+            Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
+                let mut result_string = String::new();
+
+                write!(&mut result_string, "{}.{method}(", expression.as_str()).unwrap();
+                for instance_type in instantiation {
+                    write!(&mut result_string, "{}, ", instance_type.name()).unwrap()
+                }
+                write!(&mut result_string, ")(").unwrap();
+                for parameter_expression in parameter_expressions {
+                    write!(&mut result_string, "{}, ", parameter_expression.as_str()).unwrap()
+                }
+                write!(&mut result_string, ")").unwrap();
+
+                result_string
+            }
+            Expression::StructLiteral { name, instantiation, field_expressions } => {
+                let mut result_string = String::new();
+
+                write!(&mut result_string, "{name}(").unwrap();
+                for instance_type in instantiation {
+                    write!(&mut result_string, "{}, ", instance_type.name()).unwrap()
+                }
+                write!(&mut result_string, "){{ ").unwrap();
+                for field_expression in field_expressions {
+                    write!(&mut result_string, "{}, ", field_expression.as_str()).unwrap()
+                }
+                write!(&mut result_string, " }}").unwrap();
+
+                result_string
+            }
+            Expression::Select { expression, field } => {
+                format!("{}.{field}", expression.as_str())
+            }
+            Expression::TypeAssertion { expression, assert } => {
+                format!("{}.({})", expression.as_str(), assert.name())
+            }
+            Expression::Number { value } => {
+                value.to_string()
+            }
+            Expression::BinOp { lhs, operator, rhs } => {
+                format!("{} {:?} {}", lhs.as_str(), operator, rhs.as_str())
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MethodSpecification<'a> {
     pub(crate) name: &'a str,
     pub(crate) bound: Vec<GenericBinding<'a>>,
     pub(crate) parameters: Vec<GenericBinding<'a>>,
     pub(crate) return_type: GenericType<'a>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Operator {
-    Add,
-    Mul,
 }
