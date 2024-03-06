@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash};
-use common::{FGDeclaration, FGExpression, FGMethodDeclaration, FGProgram, RufegoError};
+use common::{FGDeclaration, FGExpression, FGMethodDeclaration, FGProgram, FGType, RufegoError};
 use interpreter::{body_of};
 use parser::{Expression, GenericType, Program};
-use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
+use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum InstanceType<'a> {
@@ -33,15 +33,13 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
         omega = iteration_result;
     }
 
-    let monomorphed_expression = monomorph_expression(&program.expression, &omega, type_infos)?;
+    let monomorphed_expression = monomorph_expression(&program.expression, &SubstitutionMap::new(), &omega, type_infos)?;
 
     let mut monomorphed_declarations = Vec::new();
-    
+
     for instance_type in &omega {
         match instance_type {
-            InstanceType::Type { .. } => {
-                
-            }
+            InstanceType::Type { .. } => {}
             InstanceType::Method { type_, method_name, instantiation } => {
                 let monomorphed_method = monomorph_method_declaration(type_, method_name, instantiation, &omega, type_infos)?;
                 monomorphed_declarations.push(FGDeclaration::Method(monomorphed_method));
@@ -54,31 +52,89 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
     Ok(monomorphed_program)
 }
 
-fn monomorph_expression<'a, 'b>(expression: &'a Expression<'b>, omega: &'a HashSet<InstanceType<'b>>, type_infos: &'a TypeInfos<'b>) -> Result<FGExpression<'b>, RufegoError> {
+
+
+fn monomorph_method_declaration<'a, 'b>(
+    receiver_type: &'a GenericType<'b>,
+    method_name: &'a str,
+    method_instantiation: &'a Vec<GenericType<'b>>,
+    omega: &'a HashSet<InstanceType<'b>>,
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<FGMethodDeclaration<'b>, RufegoError> {
+    todo!()
+}
+
+fn monomorph_expression<'a, 'b>(
+    expression: &'a Expression<'b>, 
+    substitution: &'a SubstitutionMap<'b>,
+    omega: &'a HashSet<InstanceType<'b>>,
+    type_infos: &'a TypeInfos<'b>
+) -> Result<FGExpression<'b>, RufegoError> {
     match expression {
         Expression::Variable { name } => { Ok(FGExpression::Variable { name }) }
-        Expression::MethodCall { .. } => {
+        Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
+            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
+            let monomorphed_method_name = monomorph_method_name(method, instantiation, substitution)?;
+            let mut monomorphed_parameter_expressions = Vec::new();
+            
+            for parameter_expression in parameter_expressions {
+                let monomorphed_parameter = monomorph_expression(parameter_expression, substitution, omega, type_infos)?;
+                monomorphed_parameter_expressions.push(monomorphed_parameter);
+            }
+            
             todo!()
         }
-        Expression::StructLiteral { .. } => {
-            todo!()
+        Expression::StructLiteral { name, instantiation, field_expressions } => {
+            let struct_type = GenericType::NamedType(name, instantiation.clone());
+            let monomorphed_struct = monomorph_type(&struct_type, substitution)?;
+            let mut monomorphed_field_expressions = Vec::new();
+
+            for field_expression in field_expressions {
+                let monomorphed_field = monomorph_expression(field_expression, substitution, omega, type_infos)?;
+                monomorphed_field_expressions.push(monomorphed_field);
+            }
+
+            Ok(FGExpression::StructLiteral { name: monomorphed_struct, field_expressions: monomorphed_field_expressions })
         }
-        Expression::Select { .. } => {
-            todo!()
+        Expression::Select { expression, field } => {
+            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
+            
+            Ok(FGExpression::Select { expression: Box::from(monomorphed_expression), field })
         }
-        Expression::TypeAssertion { .. } => {
-            todo!()
+        Expression::TypeAssertion { expression, assert } => {
+            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
+            let monomorphed_assert_type = monomorph_type(assert, substitution)?;
+
+            Ok(FGExpression::TypeAssertion { expression: Box::from(monomorphed_expression), assert: FGType::from(monomorphed_assert_type) })
         }
         Expression::Number { value } => {
             Ok(FGExpression::Number { value: *value })
         }
         Expression::BinOp { lhs, operator, rhs } => {
-            let lhs_monomorphed = monomorph_expression(lhs, omega, type_infos)?;
-            let rhs_monomorphed = monomorph_expression(rhs, omega, type_infos)?;
+            let lhs_monomorphed = monomorph_expression(lhs, substitution, omega, type_infos)?;
+            let rhs_monomorphed = monomorph_expression(rhs, substitution, omega, type_infos)?;
 
             Ok(FGExpression::BinOp { lhs: Box::from(lhs_monomorphed), operator: *operator, rhs: Box::from(rhs_monomorphed) })
         }
     }
+}
+
+fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> Result<&'b str, RufegoError> {
+    match type_ {
+        GenericType::TypeParameter(type_parameter) => {
+            todo!()
+        }
+        GenericType::NamedType(type_name, instantiation) => {
+            todo!()
+        }
+        GenericType::NumberType => {
+            Ok("int")
+        }
+    }
+}
+
+fn monomorph_method_name<'a, 'b>(method_name: &'a str, instantiation: &'a Vec<GenericType<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<&'b str, RufegoError> {
+    todo!()
 }
 
 fn instance_set_of<'a, 'b>(
@@ -317,14 +373,4 @@ fn s_closure<'a, 'b>(
     }
 
     Ok(result_set)
-}
-
-fn monomorph_method_declaration<'a, 'b>(
-    receiver_type: &'a GenericType<'b>,
-    method_name: &'a str,
-    method_instantiation: &'a Vec<GenericType<'b>>,
-    omega: &'a HashSet<InstanceType<'b>>,
-    type_infos: &'a TypeInfos<'b>,
-) -> Result<FGMethodDeclaration<'b>, RufegoError> {
-    todo!()
 }

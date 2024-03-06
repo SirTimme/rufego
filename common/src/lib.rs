@@ -89,6 +89,16 @@ pub enum FGType<'a> {
     Struct(&'a str),
 }
 
+impl<'a> From<&'a str> for FGType<'a> {
+    fn from(value: &'a str) -> Self {
+        if value == "int" {
+            Self::Int
+        } else {
+            Self::Struct(value)
+        }
+    }
+}
+
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum TypeInfo<'a> {
     Struct(&'a Vec<FGBinding<'a, FGType<'a>>>, HashMap<&'a str, &'a FGMethodDeclaration<'a>>),
