@@ -1,7 +1,6 @@
 use Token;
 use std::fmt::Write;
 use common::Operator;
-use type_checker::substitute_type_parameter;
 
 peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {

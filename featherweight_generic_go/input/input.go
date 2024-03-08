@@ -37,8 +37,8 @@ func (this Box(type)) receive(type)() Box() {
     return this
 }
 
-func (this Box(type)) dummy(type)(param Any()) Box() {
-    return param.receive()()
+func (this Box(type)) dummy(type R Any())(param R) R {
+    return param
 }
 
 type Square(type) struct {}
@@ -48,5 +48,5 @@ func (this Flight(type T Any(), V T)) send(type)(param Any()) int {
 }
 
 func main() {
-    _ = Flight(Box(), Box()){ Box(){ 5 }, Box(){ 5 } }
+    _ = Flight(Box(), Box()){ Box(){ 5 }, Box(){ 5 } }.send()(Box(){ 42 }) + Box(){ 5 }.dummy(Box())(Box(){ 10 }).amount
 }

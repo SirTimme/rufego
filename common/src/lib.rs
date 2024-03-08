@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Write;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FGProgram<'a> {

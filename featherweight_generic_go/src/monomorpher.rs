@@ -3,9 +3,9 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use common::{RufegoError};
 use interpreter::{body_of, concat_substitutions};
-use parser::{Expression, GenericBinding, GenericType, MethodSpecification, Program};
+use parser::{Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program};
 use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
-use std::fmt::Write;
+use std::fmt::{Debug, Write};
 use std::fs::File;
 use std::io::Write as IOWrite;
 
@@ -23,14 +23,14 @@ pub(crate) enum InstanceType<'a> {
 
 pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<String, RufegoError> {
     let instance_set = instance_set_of(&program.expression, &HashMap::new(), &HashMap::new(), type_infos)?;
-    let delta = TypeEnvironment::new();    
-    
-    let mut omega = instance_set;    
+    let delta = TypeEnvironment::new();
+
+    let mut omega = instance_set;
     let mut previous_length = 0;
 
     loop {
         let iteration_result = g_function(&omega, &delta, type_infos)?;
-        
+
         omega.extend(iteration_result);
 
         if previous_length == omega.len() {
@@ -39,7 +39,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
 
         previous_length = omega.len();
     }
-        
+
     let mut program_code = String::new();
 
     writeln!(&mut program_code, "package main;\n").unwrap();
@@ -70,7 +70,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                             }
                         };
 
-                        let monomorphed_type = monomorph_type(type_, &substitution_map)?;
+                        let monomorphed_type = monomorph_type(type_, &substitution_map);
                         let monomorphed_type_declaration = monomorph_type_declaration(name, &substitution_map, &mue, type_infos)?;
 
                         write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
@@ -78,14 +78,28 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                     GenericType::NumberType => {}
                 }
             }
-            InstanceType::Method { type_, method_name, instantiation } => {
-                //let monomorphed_method = monomorph_method_declaration(type_, method_name, instantiation, type_infos)?;
-                //writeln!(&mut program_code, "{monomorphed_method}\n").unwrap();
+            InstanceType::Method { type_, method_name, instantiation: method_instantiation } => {
+                if let GenericType::NamedType(type_name, instantiation) = type_ {
+                    if let TypeInfo::Struct { bound, methods, .. } = type_infos.get(type_name).unwrap() {
+                        let method = methods.get(method_name).unwrap();
+                        let substitution_map = generate_substitution(bound, instantiation)?;
+
+                        let dummy_method = generate_dummy_method(type_name, bound, method, &substitution_map);
+                        writeln!(&mut program_code, "{dummy_method}\n").unwrap();
+
+                        let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;
+
+                        let theta = concat_substitutions(&substitution_map, &method_substitution);
+
+                        let monomorphed_method = monomorph_method_declaration(type_name, bound, method, &theta)?;
+                        writeln!(&mut program_code, "{monomorphed_method}\n").unwrap();
+                    }
+                }
             }
         }
     }
 
-    let monomorphed_expression = monomorph_expression(&program.expression, &SubstitutionMap::new(), &omega, type_infos)?;
+    let monomorphed_expression = monomorph_expression(&program.expression, &SubstitutionMap::new())?;
 
     writeln!(&mut program_code, "func main() {{").unwrap();
     writeln!(&mut program_code, "   _ = {}", monomorphed_expression.as_str()).unwrap();
@@ -106,17 +120,17 @@ fn monomorph_type_declaration<'a, 'b>(
     let mut type_declaration_string = String::new();
 
     match type_infos.get(type_name).unwrap() {
-        TypeInfo::Struct { bound, fields, methods } => {
+        TypeInfo::Struct { fields, .. } => {
             writeln!(&mut type_declaration_string, "struct {{").unwrap();
 
             for field in fields.iter() {
-                let monomorphed_field_type = monomorph_type(&field.type_, substitution_map)?;
+                let monomorphed_field_type = monomorph_type(&field.type_, substitution_map);
                 writeln!(&mut type_declaration_string, "   {} {monomorphed_field_type}", field.name).unwrap();
             }
 
             writeln!(&mut type_declaration_string, "}}\n").unwrap();
         }
-        TypeInfo::Interface { bound, methods } => {
+        TypeInfo::Interface { methods, .. } => {
             writeln!(&mut type_declaration_string, "interface {{").unwrap();
 
             for method in methods.iter() {
@@ -130,8 +144,8 @@ fn monomorph_type_declaration<'a, 'b>(
                         let monomorphed_method_specification = monomorph_method_specification(method, &theta)?;
                         writeln!(&mut type_declaration_string, "   {monomorphed_method_specification}").unwrap();
 
-                        let dummy_method = generate_dummy_method(method, substitution_map)?;
-                        writeln!(&mut type_declaration_string, "   {dummy_method}").unwrap();
+                        let dummy_method_specification = generate_dummy_method_signature(method, substitution_map);
+                        writeln!(&mut type_declaration_string, "   {dummy_method_specification}").unwrap();
                     }
                 }
             }
@@ -143,28 +157,50 @@ fn monomorph_type_declaration<'a, 'b>(
     Ok(type_declaration_string)
 }
 
-fn generate_dummy_method<'a, 'b>(
+fn generate_dummy_method_signature<'a, 'b>(
     specification: &'a MethodSpecification<'b>,
     substitution_map: &'a SubstitutionMap<'b>,
-) -> Result<String, RufegoError> {
+) -> String {
     let mut dummy_method = String::new();
-    let mut substituted_parameters = Vec::new();
+    let hash = generate_method_signature_hash(specification, substitution_map);
+
+    write!(&mut dummy_method, "{}<{hash}>() Top", specification.name).unwrap();
+
+    dummy_method
+}
+
+fn generate_method_signature_hash(specification: &MethodSpecification, substitution_map: &SubstitutionMap) -> u64 {
+    let mut hasher = DefaultHasher::new();
+
+    for type_formal in &specification.bound {
+        let substituted_type_formal = substitute_type_parameter(&type_formal.type_, substitution_map);
+        substituted_type_formal.hash(&mut hasher);
+    }
 
     for parameter in &specification.parameters {
         let substituted_parameter = substitute_type_parameter(&parameter.type_, substitution_map);
-        substituted_parameters.push(substituted_parameter);
+        substituted_parameter.hash(&mut hasher);
     }
 
-    let signature = (specification.name, substituted_parameters);
-    let mut hasher = DefaultHasher::new();
-    
-    signature.hash(&mut hasher);
-    
-    let hash = hasher.finish();
+    let substituted_return_type = substitute_type_parameter(&specification.return_type, substitution_map);
+    substituted_return_type.hash(&mut hasher);
 
-    write!(&mut dummy_method, "{}<{hash}>() Top", signature.0).unwrap();
+    hasher.finish()
+}
 
-    Ok(dummy_method)
+fn generate_dummy_method(receiver_type: &str, bound: &Vec<GenericBinding>, method: &MethodDeclaration, substitution_map: &SubstitutionMap) -> String {
+    let mut dummy_method_string = String::new();
+    let monomorphed_receiver_type = monomorph_type_formal(receiver_type, bound, substitution_map);
+
+    write!(&mut dummy_method_string, "func ({} {monomorphed_receiver_type}) ", method.receiver.name).unwrap();
+
+    let dummy_method_signature = generate_dummy_method_signature(&method.specification, substitution_map);
+
+    writeln!(&mut dummy_method_string, "{dummy_method_signature} {{").unwrap();
+    writeln!(&mut dummy_method_string, "   return Top{{}}").unwrap();
+    write!(&mut dummy_method_string, "}}").unwrap();
+
+    dummy_method_string
 }
 
 fn monomorph_method_specification<'a, 'b>(
@@ -174,56 +210,77 @@ fn monomorph_method_specification<'a, 'b>(
     let mut method_specification_string = String::new();
     let monomorphed_method_name = monomorph_method_formal(method.name, &method.bound, substitution_map)?;
 
-    write!(&mut method_specification_string, "{monomorphed_method_name}(").unwrap();
+    write!(&mut method_specification_string, "{monomorphed_method_name}").unwrap();
 
-    for (index, parameter) in method.parameters.iter().enumerate() {
-        let monomorphed_parameter = monomorph_type(&parameter.type_, substitution_map)?;
-        write!(&mut method_specification_string, "{} {monomorphed_parameter}", parameter.name).unwrap();
+    let monomorphed_method_signature = monomorph_method_signature(method, substitution_map)?;
 
-        if index < method.parameters.len() - 1 {
-            write!(&mut method_specification_string, ", ").unwrap();
-        }
-    }
-
-    let monomorphed_return_type = monomorph_type(&method.return_type, substitution_map)?;
-    write!(&mut method_specification_string, ") {monomorphed_return_type}").unwrap();
+    write!(&mut method_specification_string, "{monomorphed_method_signature}").unwrap();
 
     Ok(method_specification_string)
 }
 
 fn monomorph_method_signature(
-    method_parameters: &Vec<GenericBinding>,
-    return_type: &GenericType,
+    method: &MethodSpecification,
+    substitution_map: &SubstitutionMap,
 ) -> Result<String, RufegoError> {
-    todo!()
+    let mut method_signature_string = String::new();
+
+    write!(&mut method_signature_string, "(").unwrap();
+
+    for (index, parameter) in method.parameters.iter().enumerate() {
+        let monomorphed_parameter_type = monomorph_type(&parameter.type_, substitution_map);
+        write!(&mut method_signature_string, "{} {monomorphed_parameter_type}", parameter.name).unwrap();
+
+        if index < method.parameters.len() - 1 {
+            write!(&mut method_signature_string, ", ").unwrap();
+        }
+    }
+
+    let monomorphed_return_type = monomorph_type(&method.return_type, substitution_map);
+
+    write!(&mut method_signature_string, ") {monomorphed_return_type}").unwrap();
+
+    Ok(method_signature_string)
 }
 
-fn monomorph_method_declaration<'a, 'b>(
-    receiver_type: &'a GenericType<'b>,
-    method_name: &'a str,
-    method_instantiation: &'a Vec<GenericType<'b>>,
-    type_infos: &'a TypeInfos<'b>,
+fn monomorph_method_declaration(
+    receiver_type: &str,
+    receiver_bound: &Vec<GenericBinding>,
+    method: &MethodDeclaration,
+    substitution_map: &SubstitutionMap
 ) -> Result<String, RufegoError> {
-    todo!()
+    let mut method_string = String::new();
+    let monomorphed_receiver_type = monomorph_type_formal(receiver_type, receiver_bound, substitution_map);
+    write!(&mut method_string, "func ({} {monomorphed_receiver_type}) ", method.receiver.name).unwrap();
+    
+    let monomorphed_method_name = monomorph_method_formal(method.specification.name, &method.specification.bound, substitution_map)?;
+    write!(&mut method_string, "{monomorphed_method_name}").unwrap();
+    
+    let monomorphed_method_signature = monomorph_method_signature(&method.specification, substitution_map)?;
+    writeln!(&mut method_string, "{monomorphed_method_signature} {{").unwrap();
+    
+    let monomorphed_body_expression = monomorph_expression(&method.body, substitution_map)?;
+    writeln!(&mut method_string, "   return {monomorphed_body_expression}").unwrap();
+    write!(&mut method_string, "}}").unwrap();
+    
+    Ok(method_string)
 }
 
 fn monomorph_expression<'a, 'b>(
     expression: &'a Expression<'b>,
     substitution: &'a SubstitutionMap<'b>,
-    omega: &'a HashSet<InstanceType<'b>>,
-    type_infos: &'a TypeInfos<'b>,
 ) -> Result<String, RufegoError> {
     match expression {
         Expression::Variable { name } => {
             Ok(String::from(*name))
         }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
-            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
+            let monomorphed_expression = monomorph_expression(expression, substitution)?;
             let monomorphed_method_name = monomorph_method(method, instantiation, substitution)?;
             let mut monomorphed_parameter_expressions = Vec::new();
 
             for parameter_expression in parameter_expressions {
-                let monomorphed_parameter = monomorph_expression(parameter_expression, substitution, omega, type_infos)?;
+                let monomorphed_parameter = monomorph_expression(parameter_expression, substitution)?;
                 monomorphed_parameter_expressions.push(monomorphed_parameter);
             }
 
@@ -245,11 +302,11 @@ fn monomorph_expression<'a, 'b>(
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             let struct_type = GenericType::NamedType(name, instantiation.clone());
-            let monomorphed_struct = monomorph_type(&struct_type, substitution)?;
+            let monomorphed_struct = monomorph_type(&struct_type, substitution);
             let mut monomorphed_field_expressions = Vec::new();
 
             for field_expression in field_expressions {
-                let monomorphed_field = monomorph_expression(field_expression, substitution, omega, type_infos)?;
+                let monomorphed_field = monomorph_expression(field_expression, substitution)?;
                 monomorphed_field_expressions.push(monomorphed_field);
             }
 
@@ -270,7 +327,7 @@ fn monomorph_expression<'a, 'b>(
             Ok(expression_string)
         }
         Expression::Select { expression, field } => {
-            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
+            let monomorphed_expression = monomorph_expression(expression, substitution)?;
 
             let mut expression_string = String::new();
 
@@ -279,8 +336,8 @@ fn monomorph_expression<'a, 'b>(
             Ok(expression_string)
         }
         Expression::TypeAssertion { expression, assert } => {
-            let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
-            let monomorphed_assert_type = monomorph_type(assert, substitution)?;
+            let monomorphed_expression = monomorph_expression(expression, substitution)?;
+            let monomorphed_assert_type = monomorph_type(assert, substitution);
 
             let mut expression_string = String::new();
 
@@ -296,8 +353,8 @@ fn monomorph_expression<'a, 'b>(
             Ok(expression_string)
         }
         Expression::BinOp { lhs, operator, rhs } => {
-            let lhs_monomorphed = monomorph_expression(lhs, substitution, omega, type_infos)?;
-            let rhs_monomorphed = monomorph_expression(rhs, substitution, omega, type_infos)?;
+            let lhs_monomorphed = monomorph_expression(lhs, substitution)?;
+            let rhs_monomorphed = monomorph_expression(rhs, substitution)?;
 
             let mut expression_string = String::new();
 
@@ -308,14 +365,13 @@ fn monomorph_expression<'a, 'b>(
     }
 }
 
-fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> String {
     let substituted_type = substitute_type_parameter(type_, substitution_map);
-    let closed_type = substituted_type.close_type();
-
-    Ok(closed_type)
+    
+    substituted_type.close_type()
 }
 
-fn monomorph_type_formal<'a, 'b>(type_name: &'a str, type_formals: &'a Vec<GenericBinding<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+fn monomorph_type_formal<'a, 'b>(type_name: &'a str, type_formals: &'a Vec<GenericBinding<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> String {
     let mut substituted_type_parameters = Vec::new();
 
     for formal_type in type_formals {
@@ -332,9 +388,8 @@ fn monomorph_type_formal<'a, 'b>(type_name: &'a str, type_formals: &'a Vec<Gener
     }
 
     let type_ = GenericType::NamedType(type_name, substituted_type_parameters);
-    let closed_type = type_.close_type();
-
-    Ok(closed_type)
+    
+    type_.close_type()
 }
 
 fn monomorph_method<'a, 'b>(method: &'a str, instantiation: &'a Vec<GenericType<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
@@ -343,7 +398,7 @@ fn monomorph_method<'a, 'b>(method: &'a str, instantiation: &'a Vec<GenericType<
 
     for (index, instantiated_type) in instantiation.iter().enumerate() {
         let substituted_type = substitute_type_parameter(instantiated_type, substitution_map);
-        let monomorphed_type = monomorph_type(&substituted_type, substitution_map)?;
+        let monomorphed_type = monomorph_type(&substituted_type, substitution_map);
 
         write!(&mut method_name, "{monomorphed_type}").unwrap();
 
@@ -414,7 +469,7 @@ fn instance_set_of<'a, 'b>(
                 let parameter_instance_set = instance_set_of(parameter, variable_environment, type_environment, type_infos)?;
                 method_instance_set.extend(parameter_instance_set);
             }
-            
+
             Ok(method_instance_set)
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
@@ -429,7 +484,7 @@ fn instance_set_of<'a, 'b>(
                 let field_instance_set = instance_set_of(field_expression, variable_environment, type_environment, type_infos)?;
                 struct_instance_set.extend(field_instance_set);
             }
-            
+
             Ok(struct_instance_set)
         }
         Expression::Select { expression, .. } => {
@@ -453,13 +508,13 @@ fn instance_set_of<'a, 'b>(
         }
         Expression::BinOp { lhs, rhs, .. } => {
             let mut binop_instance_set = HashSet::new();
-            
+
             let lhs_instance_set = instance_set_of(lhs, variable_environment, type_environment, type_infos)?;
             let rhs_instance_set = instance_set_of(rhs, variable_environment, type_environment, type_infos)?;
-            
+
             binop_instance_set.extend(lhs_instance_set);
             binop_instance_set.extend(rhs_instance_set);
-            
+
             Ok(binop_instance_set)
         }
     }
