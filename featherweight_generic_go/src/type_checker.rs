@@ -495,7 +495,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                     let substitution = generate_substitution(bound, instantiation)?;
 
                     // substitute fields with type parameters with their instantiation
-                    let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+                    let substituted_struct_fields = substitute_struct_fields(&substitution, fields);
 
                     for (index, substituted_field) in substituted_struct_fields.iter().enumerate() {
                         let expression_type = field_expression_types.get(index).unwrap();
@@ -527,7 +527,7 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                         let substitution = generate_substitution(bound, &instantiation)?;
 
                         // substitute fields with type parameters with their instantiation
-                        let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+                        let substituted_struct_fields = substitute_struct_fields(&substitution, fields);
 
                         for field_binding in &substituted_struct_fields {
                             if &field_binding.name == field_var {
@@ -683,7 +683,7 @@ pub(crate) fn substitute_type_parameter<'a, 'b>(type_: &'a GenericType<'b>, subs
     }
 }
 
-pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap<'b>, fields: &'a [GenericBinding<'b>]) -> Result<Vec<GenericBinding<'b>>, RufegoError> {
+pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap<'b>, fields: &'a [GenericBinding<'b>]) -> Vec<GenericBinding<'b>> {
     let mut substituted_fields = Vec::new();
 
     for field_binding in fields.iter() {
@@ -691,10 +691,10 @@ pub(crate) fn substitute_struct_fields<'a, 'b>(substitution: &'a SubstitutionMap
         substituted_fields.push(GenericBinding { name: field_binding.name, type_: substituted_field_type });
     }
 
-    Ok(substituted_fields)
+    substituted_fields
 }
 
-fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpecification<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<MethodSpecification<'b>, RufegoError> {
+fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpecification<'b>, substitution: &'a SubstitutionMap<'b>) -> MethodSpecification<'b> {
     let mut substituted_bound = Vec::new();
 
     for binding in &method_specification.bound {
@@ -711,22 +711,22 @@ fn substitute_method_specification<'a, 'b>(method_specification: &'a MethodSpeci
 
     let substituted_return_type = substitute_type_parameter(&method_specification.return_type, substitution);
 
-    Ok(MethodSpecification {
+    MethodSpecification {
         name: method_specification.name,
         bound: substituted_bound,
         parameters: substituted_method_parameters,
         return_type: substituted_return_type,
-    })
+    }
 }
 
 /*
     Checks if child_type is a subtype of parent_type
  */
 pub(crate) fn is_subtype_of<'a, 'b>(
-    child_type: &'a GenericType<'b>, 
-    parent_type: &'a GenericType<'b>, 
-    type_environment: &'a TypeEnvironment<'b>, 
-    type_infos: &'a TypeInfos<'b>
+    child_type: &'a GenericType<'b>,
+    parent_type: &'a GenericType<'b>,
+    type_environment: &'a TypeEnvironment<'b>,
+    type_infos: &'a TypeInfos<'b>,
 ) -> Result<(), RufegoError> {
     match (child_type, parent_type) {
         (GenericType::NumberType, GenericType::NumberType) => return Ok(()),
@@ -844,7 +844,7 @@ pub(crate) fn methods_of_type<'a, 'b>(
                             let mut substituted_method_specifications = Vec::new();
 
                             for method_declaration in methods.values() {
-                                let substituted_method = substitute_method_specification(&method_declaration.specification, &substitution)?;
+                                let substituted_method = substitute_method_specification(&method_declaration.specification, &substitution);
                                 substituted_method_specifications.push(substituted_method);
                             }
 
@@ -855,7 +855,7 @@ pub(crate) fn methods_of_type<'a, 'b>(
                             let mut substituted_method_specifications = Vec::new();
 
                             for method_specification in methods.iter() {
-                                let substituted_method_specification = substitute_method_specification(method_specification, &substitution)?;
+                                let substituted_method_specification = substitute_method_specification(method_specification, &substitution);
                                 substituted_method_specifications.push(substituted_method_specification);
                             }
 

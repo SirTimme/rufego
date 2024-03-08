@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash};
-use common::{FGDeclaration, FGExpression, FGMethodDeclaration, FGProgram, FGType, RufegoError};
-use interpreter::{body_of};
-use parser::{Expression, GenericType, Program};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+use common::{RufegoError};
+use interpreter::{body_of, concat_substitutions};
+use parser::{Expression, GenericBinding, GenericType, MethodSpecification, Program};
 use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
+use std::fmt::Write;
+use std::fs::File;
+use std::io::Write as IOWrite;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum InstanceType<'a> {
@@ -17,72 +21,227 @@ pub(crate) enum InstanceType<'a> {
     },
 }
 
-pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<FGProgram<'b>, RufegoError> {
+pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'a TypeInfos<'b>) -> Result<String, RufegoError> {
     let instance_set = instance_set_of(&program.expression, &HashMap::new(), &HashMap::new(), type_infos)?;
-    let delta = TypeEnvironment::new();
-
-    let mut omega = HashSet::new();
+    let delta = TypeEnvironment::new();    
+    
+    let mut omega = instance_set;    
+    let mut previous_length = 0;
 
     loop {
-        let iteration_result = g_function(&instance_set, &delta, type_infos)?;
+        let iteration_result = g_function(&omega, &delta, type_infos)?;
+        
+        omega.extend(iteration_result);
 
-        if omega == iteration_result {
+        if previous_length == omega.len() {
             break;
         }
 
-        omega = iteration_result;
+        previous_length = omega.len();
     }
+        
+    let mut program_code = String::new();
 
-    let monomorphed_expression = monomorph_expression(&program.expression, &SubstitutionMap::new(), &omega, type_infos)?;
-
-    let mut monomorphed_declarations = Vec::new();
+    writeln!(&mut program_code, "package main;\n").unwrap();
+    writeln!(&mut program_code, "type Top struct {{}}\n").unwrap();
 
     for instance_type in &omega {
         match instance_type {
-            InstanceType::Type { .. } => {}
+            InstanceType::Type { type_ } => {
+                let mut mue = Vec::new();
+
+                for inner_instance_type in &omega {
+                    if let InstanceType::Method { type_: inner_type, method_name, instantiation } = inner_instance_type {
+                        if inner_type == type_ {
+                            mue.push((*method_name, instantiation));
+                        }
+                    }
+                }
+
+                match type_ {
+                    GenericType::TypeParameter(_) => {}
+                    GenericType::NamedType(name, instantiation) => {
+                        let substitution_map = match type_infos.get(name).unwrap() {
+                            TypeInfo::Struct { bound, .. } => {
+                                generate_substitution(bound, instantiation)?
+                            }
+                            TypeInfo::Interface { bound, .. } => {
+                                generate_substitution(bound, instantiation)?
+                            }
+                        };
+
+                        let monomorphed_type = monomorph_type(type_, &substitution_map)?;
+                        let monomorphed_type_declaration = monomorph_type_declaration(name, &substitution_map, &mue, type_infos)?;
+
+                        write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
+                    }
+                    GenericType::NumberType => {}
+                }
+            }
             InstanceType::Method { type_, method_name, instantiation } => {
-                let monomorphed_method = monomorph_method_declaration(type_, method_name, instantiation, &omega, type_infos)?;
-                monomorphed_declarations.push(FGDeclaration::Method(monomorphed_method));
+                //let monomorphed_method = monomorph_method_declaration(type_, method_name, instantiation, type_infos)?;
+                //writeln!(&mut program_code, "{monomorphed_method}\n").unwrap();
             }
         }
     }
 
-    let monomorphed_program = FGProgram { declarations: monomorphed_declarations, expression: Box::from(monomorphed_expression) };
+    let monomorphed_expression = monomorph_expression(&program.expression, &SubstitutionMap::new(), &omega, type_infos)?;
 
-    Ok(monomorphed_program)
+    writeln!(&mut program_code, "func main() {{").unwrap();
+    writeln!(&mut program_code, "   _ = {}", monomorphed_expression.as_str()).unwrap();
+    writeln!(&mut program_code, "}}").unwrap();
+
+    let mut file = File::create("output/output.go").unwrap();
+    file.write_all(program_code.as_bytes()).unwrap();
+
+    Ok(program_code)
 }
 
+fn monomorph_type_declaration<'a, 'b>(
+    type_name: &'a str,
+    substitution_map: &'a SubstitutionMap<'b>,
+    mue: &'a [(&'b str, &'a Vec<GenericType<'b>>)],
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<String, RufegoError> {
+    let mut type_declaration_string = String::new();
 
+    match type_infos.get(type_name).unwrap() {
+        TypeInfo::Struct { bound, fields, methods } => {
+            writeln!(&mut type_declaration_string, "struct {{").unwrap();
+
+            for field in fields.iter() {
+                let monomorphed_field_type = monomorph_type(&field.type_, substitution_map)?;
+                writeln!(&mut type_declaration_string, "   {} {monomorphed_field_type}", field.name).unwrap();
+            }
+
+            writeln!(&mut type_declaration_string, "}}\n").unwrap();
+        }
+        TypeInfo::Interface { bound, methods } => {
+            writeln!(&mut type_declaration_string, "interface {{").unwrap();
+
+            for method in methods.iter() {
+                match mue.iter().find(|(method_name, _)| method_name == &method.name) {
+                    None => {}
+                    Some((_, instantiation)) => {
+                        let method_substitution = generate_substitution(&method.bound, instantiation)?;
+
+                        let theta = concat_substitutions(substitution_map, &method_substitution);
+
+                        let monomorphed_method_specification = monomorph_method_specification(method, &theta)?;
+                        writeln!(&mut type_declaration_string, "   {monomorphed_method_specification}").unwrap();
+
+                        let dummy_method = generate_dummy_method(method, substitution_map)?;
+                        writeln!(&mut type_declaration_string, "   {dummy_method}").unwrap();
+                    }
+                }
+            }
+
+            writeln!(&mut type_declaration_string, "}}\n").unwrap();
+        }
+    }
+
+    Ok(type_declaration_string)
+}
+
+fn generate_dummy_method<'a, 'b>(
+    specification: &'a MethodSpecification<'b>,
+    substitution_map: &'a SubstitutionMap<'b>,
+) -> Result<String, RufegoError> {
+    let mut dummy_method = String::new();
+    let mut substituted_parameters = Vec::new();
+
+    for parameter in &specification.parameters {
+        let substituted_parameter = substitute_type_parameter(&parameter.type_, substitution_map);
+        substituted_parameters.push(substituted_parameter);
+    }
+
+    let signature = (specification.name, substituted_parameters);
+    let mut hasher = DefaultHasher::new();
+    
+    signature.hash(&mut hasher);
+    
+    let hash = hasher.finish();
+
+    write!(&mut dummy_method, "{}<{hash}>() Top", signature.0).unwrap();
+
+    Ok(dummy_method)
+}
+
+fn monomorph_method_specification<'a, 'b>(
+    method: &'a MethodSpecification<'b>,
+    substitution_map: &'a SubstitutionMap<'b>,
+) -> Result<String, RufegoError> {
+    let mut method_specification_string = String::new();
+    let monomorphed_method_name = monomorph_method_formal(method.name, &method.bound, substitution_map)?;
+
+    write!(&mut method_specification_string, "{monomorphed_method_name}(").unwrap();
+
+    for (index, parameter) in method.parameters.iter().enumerate() {
+        let monomorphed_parameter = monomorph_type(&parameter.type_, substitution_map)?;
+        write!(&mut method_specification_string, "{} {monomorphed_parameter}", parameter.name).unwrap();
+
+        if index < method.parameters.len() - 1 {
+            write!(&mut method_specification_string, ", ").unwrap();
+        }
+    }
+
+    let monomorphed_return_type = monomorph_type(&method.return_type, substitution_map)?;
+    write!(&mut method_specification_string, ") {monomorphed_return_type}").unwrap();
+
+    Ok(method_specification_string)
+}
+
+fn monomorph_method_signature(
+    method_parameters: &Vec<GenericBinding>,
+    return_type: &GenericType,
+) -> Result<String, RufegoError> {
+    todo!()
+}
 
 fn monomorph_method_declaration<'a, 'b>(
     receiver_type: &'a GenericType<'b>,
     method_name: &'a str,
     method_instantiation: &'a Vec<GenericType<'b>>,
-    omega: &'a HashSet<InstanceType<'b>>,
     type_infos: &'a TypeInfos<'b>,
-) -> Result<FGMethodDeclaration<'b>, RufegoError> {
+) -> Result<String, RufegoError> {
     todo!()
 }
 
 fn monomorph_expression<'a, 'b>(
-    expression: &'a Expression<'b>, 
+    expression: &'a Expression<'b>,
     substitution: &'a SubstitutionMap<'b>,
     omega: &'a HashSet<InstanceType<'b>>,
-    type_infos: &'a TypeInfos<'b>
-) -> Result<FGExpression<'b>, RufegoError> {
+    type_infos: &'a TypeInfos<'b>,
+) -> Result<String, RufegoError> {
     match expression {
-        Expression::Variable { name } => { Ok(FGExpression::Variable { name }) }
+        Expression::Variable { name } => {
+            Ok(String::from(*name))
+        }
         Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
             let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
-            let monomorphed_method_name = monomorph_method_name(method, instantiation, substitution)?;
+            let monomorphed_method_name = monomorph_method(method, instantiation, substitution)?;
             let mut monomorphed_parameter_expressions = Vec::new();
-            
+
             for parameter_expression in parameter_expressions {
                 let monomorphed_parameter = monomorph_expression(parameter_expression, substitution, omega, type_infos)?;
                 monomorphed_parameter_expressions.push(monomorphed_parameter);
             }
-            
-            todo!()
+
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{monomorphed_expression}.{monomorphed_method_name}(").unwrap();
+
+            for (index, parameter_expression) in monomorphed_parameter_expressions.iter().enumerate() {
+                write!(&mut expression_string, "{parameter_expression}").unwrap();
+
+                if index < parameter_expressions.len() - 1 {
+                    write!(&mut expression_string, ", ").unwrap();
+                }
+            }
+
+            write!(&mut expression_string, ")").unwrap();
+
+            Ok(expression_string)
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
             let struct_type = GenericType::NamedType(name, instantiation.clone());
@@ -94,47 +253,129 @@ fn monomorph_expression<'a, 'b>(
                 monomorphed_field_expressions.push(monomorphed_field);
             }
 
-            Ok(FGExpression::StructLiteral { name: monomorphed_struct, field_expressions: monomorphed_field_expressions })
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{monomorphed_struct}{{ ").unwrap();
+
+            for (index, field_expression) in monomorphed_field_expressions.iter().enumerate() {
+                write!(&mut expression_string, "{}", field_expression.as_str()).unwrap();
+
+                if index < field_expressions.len() - 1 {
+                    write!(&mut expression_string, ", ").unwrap();
+                }
+            }
+
+            write!(&mut expression_string, " }}").unwrap();
+
+            Ok(expression_string)
         }
         Expression::Select { expression, field } => {
             let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
-            
-            Ok(FGExpression::Select { expression: Box::from(monomorphed_expression), field })
+
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{monomorphed_expression}.{field}").unwrap();
+
+            Ok(expression_string)
         }
         Expression::TypeAssertion { expression, assert } => {
             let monomorphed_expression = monomorph_expression(expression, substitution, omega, type_infos)?;
             let monomorphed_assert_type = monomorph_type(assert, substitution)?;
 
-            Ok(FGExpression::TypeAssertion { expression: Box::from(monomorphed_expression), assert: FGType::from(monomorphed_assert_type) })
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{monomorphed_expression}.({monomorphed_assert_type})").unwrap();
+
+            Ok(expression_string)
         }
         Expression::Number { value } => {
-            Ok(FGExpression::Number { value: *value })
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{value}").unwrap();
+
+            Ok(expression_string)
         }
         Expression::BinOp { lhs, operator, rhs } => {
             let lhs_monomorphed = monomorph_expression(lhs, substitution, omega, type_infos)?;
             let rhs_monomorphed = monomorph_expression(rhs, substitution, omega, type_infos)?;
 
-            Ok(FGExpression::BinOp { lhs: Box::from(lhs_monomorphed), operator: *operator, rhs: Box::from(rhs_monomorphed) })
+            let mut expression_string = String::new();
+
+            write!(&mut expression_string, "{lhs_monomorphed} {} {rhs_monomorphed}", operator.as_str()).unwrap();
+
+            Ok(expression_string)
         }
     }
 }
 
-fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> Result<&'b str, RufegoError> {
-    match type_ {
-        GenericType::TypeParameter(type_parameter) => {
-            todo!()
-        }
-        GenericType::NamedType(type_name, instantiation) => {
-            todo!()
-        }
-        GenericType::NumberType => {
-            Ok("int")
-        }
-    }
+fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+    let substituted_type = substitute_type_parameter(type_, substitution_map);
+    let closed_type = substituted_type.close_type();
+
+    Ok(closed_type)
 }
 
-fn monomorph_method_name<'a, 'b>(method_name: &'a str, instantiation: &'a Vec<GenericType<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<&'b str, RufegoError> {
-    todo!()
+fn monomorph_type_formal<'a, 'b>(type_name: &'a str, type_formals: &'a Vec<GenericBinding<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+    let mut substituted_type_parameters = Vec::new();
+
+    for formal_type in type_formals {
+        let substituted_type_parameter = match substitution_map.get(formal_type.name) {
+            None => {
+                formal_type.type_.clone()
+            }
+            Some(entry) => {
+                entry.clone()
+            }
+        };
+
+        substituted_type_parameters.push(substituted_type_parameter);
+    }
+
+    let type_ = GenericType::NamedType(type_name, substituted_type_parameters);
+    let closed_type = type_.close_type();
+
+    Ok(closed_type)
+}
+
+fn monomorph_method<'a, 'b>(method: &'a str, instantiation: &'a Vec<GenericType<'b>>, substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+    let mut method_name = String::new();
+    write!(&mut method_name, "{method}<").unwrap();
+
+    for (index, instantiated_type) in instantiation.iter().enumerate() {
+        let substituted_type = substitute_type_parameter(instantiated_type, substitution_map);
+        let monomorphed_type = monomorph_type(&substituted_type, substitution_map)?;
+
+        write!(&mut method_name, "{monomorphed_type}").unwrap();
+
+        if index < instantiation.len() - 1 {
+            write!(&mut method_name, ",").unwrap();
+        }
+    }
+
+    write!(&mut method_name, ">").unwrap();
+
+    Ok(method_name)
+}
+
+fn monomorph_method_formal<'a, 'b>(method: &'a str, type_formals: &'a [GenericBinding<'b>], substitution_map: &'a SubstitutionMap<'b>) -> Result<String, RufegoError> {
+    let mut substituted_type_parameters = Vec::new();
+
+    for formal_type in type_formals.iter() {
+        let substituted_type_parameter = match substitution_map.get(formal_type.name) {
+            None => {
+                formal_type.type_.clone()
+            }
+            Some(entry) => {
+                entry.clone()
+            }
+        };
+
+        substituted_type_parameters.push(substituted_type_parameter);
+    }
+
+    let method_name = monomorph_method(method, &substituted_type_parameters, substitution_map)?;
+
+    Ok(method_name)
 }
 
 fn instance_set_of<'a, 'b>(
@@ -173,7 +414,7 @@ fn instance_set_of<'a, 'b>(
                 let parameter_instance_set = instance_set_of(parameter, variable_environment, type_environment, type_infos)?;
                 method_instance_set.extend(parameter_instance_set);
             }
-
+            
             Ok(method_instance_set)
         }
         Expression::StructLiteral { name, instantiation, field_expressions } => {
@@ -188,7 +429,7 @@ fn instance_set_of<'a, 'b>(
                 let field_instance_set = instance_set_of(field_expression, variable_environment, type_environment, type_infos)?;
                 struct_instance_set.extend(field_instance_set);
             }
-
+            
             Ok(struct_instance_set)
         }
         Expression::Select { expression, .. } => {
@@ -204,11 +445,22 @@ fn instance_set_of<'a, 'b>(
 
             Ok(assert_instance_set)
         }
-        _ => {
+        Expression::Number { .. } => {
             let mut number_instance_set = HashSet::new();
             number_instance_set.insert(InstanceType::Type { type_: GenericType::NumberType });
 
             Ok(number_instance_set)
+        }
+        Expression::BinOp { lhs, rhs, .. } => {
+            let mut binop_instance_set = HashSet::new();
+            
+            let lhs_instance_set = instance_set_of(lhs, variable_environment, type_environment, type_infos)?;
+            let rhs_instance_set = instance_set_of(rhs, variable_environment, type_environment, type_infos)?;
+            
+            binop_instance_set.extend(lhs_instance_set);
+            binop_instance_set.extend(rhs_instance_set);
+            
+            Ok(binop_instance_set)
         }
     }
 }
@@ -245,7 +497,7 @@ fn f_closure<'a, 'b>(instance_set: &'a HashSet<InstanceType<'b>>, type_infos: &'
             if let TypeInfo::Struct { bound, fields, .. } = type_info {
                 let substitution = generate_substitution(bound, instantiation)?;
 
-                let substituted_fields = substitute_struct_fields(&substitution, fields)?;
+                let substituted_fields = substitute_struct_fields(&substitution, fields);
 
                 for field_binding in substituted_fields {
                     result_set.insert(InstanceType::Type { type_: field_binding.type_.clone() });
@@ -332,40 +584,45 @@ fn s_closure<'a, 'b>(
                 if let InstanceType::Type { type_: second_type } = second_value {
                     match second_type {
                         GenericType::NamedType(type_name, instantiation) => {
-                            if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
-                                let (mut parameters, substituted_expression) = body_of(
-                                    type_name,
-                                    instantiation,
-                                    method_name,
-                                    method_instantiation,
-                                    type_infos,
-                                ).unwrap();
+                            match type_infos.get(type_name).unwrap() {
+                                TypeInfo::Struct { .. } => {
+                                    if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
+                                        let (mut parameters, substituted_expression) = body_of(
+                                            type_name,
+                                            instantiation,
+                                            method_name,
+                                            method_instantiation,
+                                            type_infos,
+                                        ).unwrap();
 
-                                // substitute receiver and parameter with evaluated values
-                                let mut local_context = HashMap::new();
+                                        // substitute receiver and parameter with evaluated values
+                                        let mut local_context = HashMap::new();
 
-                                // receiver binding is stored at index 0 so remove it
-                                let receiver_binding = parameters.remove(0);
+                                        // receiver binding is stored at index 0 so remove it
+                                        let receiver_binding = parameters.remove(0);
 
-                                // insert receiver to local variables
-                                local_context.insert(receiver_binding.name, receiver_binding.type_);
+                                        // insert receiver to local variables
+                                        local_context.insert(receiver_binding.name, receiver_binding.type_);
 
-                                for parameter_binding in parameters.iter() {
-                                    local_context.insert(parameter_binding.name, parameter_binding.type_.clone());
+                                        for parameter_binding in parameters.iter() {
+                                            local_context.insert(parameter_binding.name, parameter_binding.type_.clone());
+                                        }
+
+                                        let omega = instance_set_of(&substituted_expression, &local_context, delta, type_infos)?;
+
+                                        result_set.insert(InstanceType::Method {
+                                            type_: second_type.clone(),
+                                            method_name,
+                                            instantiation: method_instantiation.clone(),
+                                        });
+
+                                        result_set.extend(omega)
+                                    }
                                 }
-
-                                let omega = instance_set_of(&substituted_expression, &local_context, delta, type_infos)?;
-
-                                result_set.insert(InstanceType::Method {
-                                    type_: second_type.clone(),
-                                    method_name,
-                                    instantiation: method_instantiation.clone(),
-                                });
-
-                                result_set.extend(omega)
+                                TypeInfo::Interface { .. } => continue,
                             }
                         }
-                        _ => break,
+                        _ => continue,
                     }
                 }
             }

@@ -83,7 +83,7 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
                             let substitution = generate_substitution(bound, &instantiation)?;
 
                             // substitute fields with instantiation if possible
-                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields)?;
+                            let substituted_struct_fields = substitute_struct_fields(&substitution, fields);
 
                             for (index, field_binding) in substituted_struct_fields.iter().enumerate() {
                                 if &field_binding.name == field {
@@ -216,7 +216,7 @@ fn type_of<'a>(value: &'a Value) -> GenericType<'a> {
     }
 }
 
-fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a SubstitutionMap<'b>) -> SubstitutionMap<'b> {
+pub fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a SubstitutionMap<'b>) -> SubstitutionMap<'b> {
     let mut theta = SubstitutionMap::new();
 
     for (key, value) in phi {
@@ -251,7 +251,7 @@ pub(crate) fn body_of<'a, 'b>(
             let mut parameters = Vec::new();
 
             parameters.push(GenericBinding { name: method_declaration.receiver.name, type_: GenericType::NamedType(receiver_name, receiver_instantiation.clone()) });
-             
+
             for parameter in &method_declaration.specification.parameters {
                 parameters.push(parameter.clone());
             }

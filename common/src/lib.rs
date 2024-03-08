@@ -1,25 +1,26 @@
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FGProgram<'a> {
     pub declarations: Vec<FGDeclaration<'a>>,
-    pub expression: Box<FGExpression<'a>>
+    pub expression: Box<FGExpression<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FGDeclaration<'a> {
     Type {
         name: &'a str,
-        literal: FGTypeLiteral<'a>
+        literal: FGTypeLiteral<'a>,
     },
-    Method(FGMethodDeclaration<'a>)
+    Method(FGMethodDeclaration<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FGMethodDeclaration<'a> {
     pub receiver: FGBinding<'a, &'a str>,
     pub specification: FGMethodSpecification<'a>,
-    pub body: FGExpression<'a>
+    pub body: FGExpression<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,7 +30,7 @@ pub enum FGTypeLiteral<'a> {
     },
     Interface {
         methods: Vec<FGMethodSpecification<'a>>
-    }
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,19 +47,19 @@ pub enum FGExpression<'a> {
     MethodCall {
         expression: Box<FGExpression<'a>>,
         method: &'a str,
-        parameter_expressions: Vec<FGExpression<'a>>
+        parameter_expressions: Vec<FGExpression<'a>>,
     },
     StructLiteral {
         name: &'a str,
-        field_expressions: Vec<FGExpression<'a>>
+        field_expressions: Vec<FGExpression<'a>>,
     },
     Select {
         expression: Box<FGExpression<'a>>,
-        field: &'a str
+        field: &'a str,
     },
     TypeAssertion {
         expression: Box<FGExpression<'a>>,
-        assert: FGType<'a>
+        assert: FGType<'a>,
     },
     Number {
         value: i64
@@ -66,15 +67,15 @@ pub enum FGExpression<'a> {
     BinOp {
         lhs: Box<FGExpression<'a>>,
         operator: Operator,
-        rhs: Box<FGExpression<'a>>
-    }
+        rhs: Box<FGExpression<'a>>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FGMethodSpecification<'a> {
     pub name: &'a str,
     pub parameters: Vec<FGBinding<'a, FGType<'a>>>,
-    pub return_type: FGType<'a>
+    pub return_type: FGType<'a>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,20 +84,23 @@ pub enum Operator {
     Mul,
 }
 
+impl Operator {
+    pub fn as_str(&self) -> String {
+        match self {
+            Operator::Add => {
+                String::from("+")
+            }
+            Operator::Mul => {
+                String::from("*")
+            }
+        }
+    }
+}
+
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum FGType<'a> {
     Int,
     Struct(&'a str),
-}
-
-impl<'a> From<&'a str> for FGType<'a> {
-    fn from(value: &'a str) -> Self {
-        if value == "int" {
-            Self::Int
-        } else {
-            Self::Struct(value)
-        }
-    }
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
