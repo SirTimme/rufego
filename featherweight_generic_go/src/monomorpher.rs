@@ -58,40 +58,41 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                     }
                 }
 
-                match type_ {
-                    GenericType::TypeParameter(_) => {}
-                    GenericType::NamedType(name, instantiation) => {
-                        let substitution_map = match type_infos.get(name).unwrap() {
-                            TypeInfo::Struct { bound, .. } => {
-                                generate_substitution(bound, instantiation)?
-                            }
-                            TypeInfo::Interface { bound, .. } => {
-                                generate_substitution(bound, instantiation)?
-                            }
-                        };
+                if let GenericType::NamedType(type_name, instantiation) = type_ {
+                    match type_infos.get(type_name).unwrap() {
+                        TypeInfo::Struct { bound, methods, .. } => {
+                            let substitution_map = generate_substitution(bound, instantiation)?;
+                            let monomorphed_type = monomorph_type(type_, &substitution_map);
+                            let monomorphed_type_declaration = monomorph_type_declaration(type_name, &substitution_map, &mue, type_infos)?;
 
-                        let monomorphed_type = monomorph_type(type_, &substitution_map);
-                        let monomorphed_type_declaration = monomorph_type_declaration(name, &substitution_map, &mue, type_infos)?;
+                            for method_declaration in methods.values() {
+                                let dummy_method = generate_dummy_method(type_name, bound, method_declaration, &substitution_map);
+                                writeln!(&mut program_code, "{dummy_method}\n").unwrap();
+                            }
 
-                        write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
+                            write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
+                        }
+                        TypeInfo::Interface { bound, .. } => {
+                            let substitution_map = generate_substitution(bound, instantiation)?;
+                            let monomorphed_type = monomorph_type(type_, &substitution_map);
+                            let monomorphed_type_declaration = monomorph_type_declaration(type_name, &substitution_map, &mue, type_infos)?;
+                            
+                            write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
+                        }
                     }
-                    GenericType::NumberType => {}
                 }
             }
             InstanceType::Method { type_, method_name, instantiation: method_instantiation } => {
                 if let GenericType::NamedType(type_name, instantiation) = type_ {
                     if let TypeInfo::Struct { bound, methods, .. } = type_infos.get(type_name).unwrap() {
                         let method = methods.get(method_name).unwrap();
-                        let substitution_map = generate_substitution(bound, instantiation)?;
-
-                        let dummy_method = generate_dummy_method(type_name, bound, method, &substitution_map);
-                        writeln!(&mut program_code, "{dummy_method}\n").unwrap();
-
-                        let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;
-
-                        let theta = concat_substitutions(&substitution_map, &method_substitution);
-
+                        
+                        let type_substitution = generate_substitution(bound, instantiation)?;                        
+                        let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;                        
+                        let theta = concat_substitutions(&type_substitution, &method_substitution);          
+                        
                         let monomorphed_method = monomorph_method_declaration(type_name, bound, method, &theta)?;
+                        
                         writeln!(&mut program_code, "{monomorphed_method}\n").unwrap();
                     }
                 }
@@ -134,20 +135,21 @@ fn monomorph_type_declaration<'a, 'b>(
             writeln!(&mut type_declaration_string, "interface {{").unwrap();
 
             for method in methods.iter() {
-                match mue.iter().find(|(method_name, _)| method_name == &method.name) {
-                    None => {}
-                    Some((_, instantiation)) => {
-                        let method_substitution = generate_substitution(&method.bound, instantiation)?;
-
-                        let theta = concat_substitutions(substitution_map, &method_substitution);
-
-                        let monomorphed_method_specification = monomorph_method_specification(method, &theta)?;
-                        writeln!(&mut type_declaration_string, "   {monomorphed_method_specification}").unwrap();
-
-                        let dummy_method_specification = generate_dummy_method_signature(method, substitution_map);
-                        writeln!(&mut type_declaration_string, "   {dummy_method_specification}").unwrap();
+                for (method_name, instantiation) in mue {
+                    if method_name != &method.name {
+                        continue;
                     }
+
+                    let theta = generate_substitution(&method.bound, instantiation)?;
+
+                    let monomorphed_method_name = monomorph_method_formal(method_name, &method.bound, &theta)?;
+                    let monomorphed_method_signature = monomorph_method_signature(method, &theta)?;
+
+                    writeln!(&mut type_declaration_string, "   {monomorphed_method_name}{monomorphed_method_signature}").unwrap();
                 }
+
+                let dummy_method_specification = generate_dummy_method_signature(method, substitution_map);
+                writeln!(&mut type_declaration_string, "   {dummy_method_specification}").unwrap();
             }
 
             writeln!(&mut type_declaration_string, "}}\n").unwrap();
@@ -171,6 +173,8 @@ fn generate_dummy_method_signature<'a, 'b>(
 
 fn generate_method_signature_hash(specification: &MethodSpecification, substitution_map: &SubstitutionMap) -> u64 {
     let mut hasher = DefaultHasher::new();
+
+    specification.name.hash(&mut hasher);
 
     for type_formal in &specification.bound {
         let substituted_type_formal = substitute_type_parameter(&type_formal.type_, substitution_map);
@@ -203,22 +207,6 @@ fn generate_dummy_method(receiver_type: &str, bound: &Vec<GenericBinding>, metho
     dummy_method_string
 }
 
-fn monomorph_method_specification<'a, 'b>(
-    method: &'a MethodSpecification<'b>,
-    substitution_map: &'a SubstitutionMap<'b>,
-) -> Result<String, RufegoError> {
-    let mut method_specification_string = String::new();
-    let monomorphed_method_name = monomorph_method_formal(method.name, &method.bound, substitution_map)?;
-
-    write!(&mut method_specification_string, "{monomorphed_method_name}").unwrap();
-
-    let monomorphed_method_signature = monomorph_method_signature(method, substitution_map)?;
-
-    write!(&mut method_specification_string, "{monomorphed_method_signature}").unwrap();
-
-    Ok(method_specification_string)
-}
-
 fn monomorph_method_signature(
     method: &MethodSpecification,
     substitution_map: &SubstitutionMap,
@@ -247,22 +235,24 @@ fn monomorph_method_declaration(
     receiver_type: &str,
     receiver_bound: &Vec<GenericBinding>,
     method: &MethodDeclaration,
-    substitution_map: &SubstitutionMap
+    theta: &SubstitutionMap,
 ) -> Result<String, RufegoError> {
     let mut method_string = String::new();
-    let monomorphed_receiver_type = monomorph_type_formal(receiver_type, receiver_bound, substitution_map);
+    
+    let monomorphed_receiver_type = monomorph_type_formal(receiver_type, receiver_bound, theta);
     write!(&mut method_string, "func ({} {monomorphed_receiver_type}) ", method.receiver.name).unwrap();
-    
-    let monomorphed_method_name = monomorph_method_formal(method.specification.name, &method.specification.bound, substitution_map)?;
+
+    let monomorphed_method_name = monomorph_method_formal(method.specification.name, &method.specification.bound, theta)?;
     write!(&mut method_string, "{monomorphed_method_name}").unwrap();
-    
-    let monomorphed_method_signature = monomorph_method_signature(&method.specification, substitution_map)?;
+
+    let monomorphed_method_signature = monomorph_method_signature(&method.specification, theta)?;
     writeln!(&mut method_string, "{monomorphed_method_signature} {{").unwrap();
+
+    let monomorphed_body_expression = monomorph_expression(&method.body, theta)?;
     
-    let monomorphed_body_expression = monomorph_expression(&method.body, substitution_map)?;
     writeln!(&mut method_string, "   return {monomorphed_body_expression}").unwrap();
     write!(&mut method_string, "}}").unwrap();
-    
+
     Ok(method_string)
 }
 
@@ -367,7 +357,7 @@ fn monomorph_expression<'a, 'b>(
 
 fn monomorph_type<'a, 'b>(type_: &'a GenericType<'b>, substitution_map: &'a SubstitutionMap<'b>) -> String {
     let substituted_type = substitute_type_parameter(type_, substitution_map);
-    
+
     substituted_type.close_type()
 }
 
@@ -388,7 +378,7 @@ fn monomorph_type_formal<'a, 'b>(type_name: &'a str, type_formals: &'a Vec<Gener
     }
 
     let type_ = GenericType::NamedType(type_name, substituted_type_parameters);
-    
+
     type_.close_type()
 }
 

@@ -33,7 +33,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a FGProgram<'a>) -> Result<HashMap
                 Some(TypeInfo::Struct(.., methods)) => {
                     // method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        return Err(RufegoError { message: format!("ERROR: Duplicate declaration for method {:?} on type {:?}", method.specification.name, method.receiver.type_) });
+                        return Err(RufegoError { message: format!("ERROR: Duplicate declaration of method '{}' for type {:?}", method.specification.name, method.receiver.type_) });
                     }
                 }
             }

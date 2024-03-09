@@ -17,7 +17,7 @@ use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program};
 
 fn main() {
-    read_input("featherweight_go/input/input.go");
+    read_input("output/output.go");
 }
 
 fn read_input(filename: &str) {

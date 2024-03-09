@@ -5,21 +5,6 @@ type Any(type) interface {
     receive(type)() Box()
 }
 
-type Any2(type) interface {}
-
-type Rectangle(type V Any(), R Any()) struct {
-    amount V
-    client R
-}
-
-type Triangle(type T Any()) struct {
-    value T
-}
-
-func (this Triangle(type T Any())) send(type)() int {
-    return 0
-}
-
 type Flight(type T Any(), V T) struct {
     amount T
     amno V
@@ -30,18 +15,28 @@ type Box(type) struct {
 }
 
 func (this Box(type)) send(type)() int {
-    return 10
+    return this.dummy(Square())(Square(){ 10 }).content
 }
 
 func (this Box(type)) receive(type)() Box() {
     return this
 }
 
+func (this Square(type)) send(type)() int {
+    return 1
+}
+
+func (this Square(type)) receive(type)() Box() {
+    return Box(){ 10 }
+}
+
 func (this Box(type)) dummy(type R Any())(param R) R {
     return param
 }
 
-type Square(type) struct {}
+type Square(type) struct {
+    content int
+}
 
 func (this Flight(type T Any(), V T)) send(type)(param Any()) int {
     return param.send()()
