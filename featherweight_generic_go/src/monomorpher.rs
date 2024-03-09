@@ -76,7 +76,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                             let substitution_map = generate_substitution(bound, instantiation)?;
                             let monomorphed_type = monomorph_type(type_, &substitution_map);
                             let monomorphed_type_declaration = monomorph_type_declaration(type_name, &substitution_map, &mue, type_infos)?;
-                            
+
                             write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
                         }
                     }
@@ -86,13 +86,13 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                 if let GenericType::NamedType(type_name, instantiation) = type_ {
                     if let TypeInfo::Struct { bound, methods, .. } = type_infos.get(type_name).unwrap() {
                         let method = methods.get(method_name).unwrap();
-                        
-                        let type_substitution = generate_substitution(bound, instantiation)?;                        
-                        let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;                        
-                        let theta = concat_substitutions(&type_substitution, &method_substitution);          
-                        
+
+                        let type_substitution = generate_substitution(bound, instantiation)?;
+                        let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;
+                        let theta = concat_substitutions(&type_substitution, &method_substitution);
+
                         let monomorphed_method = monomorph_method_declaration(type_name, bound, method, &theta)?;
-                        
+
                         writeln!(&mut program_code, "{monomorphed_method}\n").unwrap();
                     }
                 }
@@ -238,7 +238,7 @@ fn monomorph_method_declaration(
     theta: &SubstitutionMap,
 ) -> Result<String, RufegoError> {
     let mut method_string = String::new();
-    
+
     let monomorphed_receiver_type = monomorph_type_formal(receiver_type, receiver_bound, theta);
     write!(&mut method_string, "func ({} {monomorphed_receiver_type}) ", method.receiver.name).unwrap();
 
@@ -249,7 +249,7 @@ fn monomorph_method_declaration(
     writeln!(&mut method_string, "{monomorphed_method_signature} {{").unwrap();
 
     let monomorphed_body_expression = monomorph_expression(&method.body, theta)?;
-    
+
     writeln!(&mut method_string, "   return {monomorphed_body_expression}").unwrap();
     write!(&mut method_string, "}}").unwrap();
 
@@ -624,52 +624,47 @@ fn s_closure<'a, 'b>(
     let mut result_set = HashSet::<InstanceType>::new();
 
     for first_value in instance_set {
-        if let InstanceType::Method { type_, method_name, instantiation: method_instantiation } = first_value {
-            for second_value in instance_set {
-                if let InstanceType::Type { type_: second_type } = second_value {
-                    match second_type {
-                        GenericType::NamedType(type_name, instantiation) => {
-                            match type_infos.get(type_name).unwrap() {
-                                TypeInfo::Struct { .. } => {
-                                    if is_subtype_of(second_type, type_, delta, type_infos).is_ok() {
-                                        let (mut parameters, substituted_expression) = body_of(
-                                            type_name,
-                                            instantiation,
-                                            method_name,
-                                            method_instantiation,
-                                            type_infos,
-                                        ).unwrap();
+        for second_value in instance_set {
+            match (first_value, second_value) {
+                (InstanceType::Method { type_: method_type, method_name, instantiation: method_instantiation }, InstanceType::Type { type_ }) => {
+                    if let GenericType::NamedType(type_name, instantiation) = type_ {
+                        if let TypeInfo::Struct { .. } = type_infos.get(type_name).unwrap() {
+                            if is_subtype_of(type_, method_type, delta, type_infos).is_ok() {
+                                let (mut parameters, substituted_expression) = body_of(
+                                    type_name,
+                                    instantiation,
+                                    method_name,
+                                    method_instantiation,
+                                    type_infos,
+                                ).unwrap();
 
-                                        // substitute receiver and parameter with evaluated values
-                                        let mut local_context = HashMap::new();
+                                // substitute receiver and parameter with evaluated values
+                                let mut local_context = HashMap::new();
 
-                                        // receiver binding is stored at index 0 so remove it
-                                        let receiver_binding = parameters.remove(0);
+                                // receiver binding is stored at index 0 so remove it
+                                let receiver_binding = parameters.remove(0);
 
-                                        // insert receiver to local variables
-                                        local_context.insert(receiver_binding.name, receiver_binding.type_);
+                                // insert receiver to local variables
+                                local_context.insert(receiver_binding.name, receiver_binding.type_);
 
-                                        for parameter_binding in parameters.iter() {
-                                            local_context.insert(parameter_binding.name, parameter_binding.type_.clone());
-                                        }
-
-                                        let omega = instance_set_of(&substituted_expression, &local_context, delta, type_infos)?;
-
-                                        result_set.insert(InstanceType::Method {
-                                            type_: second_type.clone(),
-                                            method_name,
-                                            instantiation: method_instantiation.clone(),
-                                        });
-
-                                        result_set.extend(omega)
-                                    }
+                                for parameter_binding in parameters.iter() {
+                                    local_context.insert(parameter_binding.name, parameter_binding.type_.clone());
                                 }
-                                TypeInfo::Interface { .. } => continue,
+
+                                let omega = instance_set_of(&substituted_expression, &local_context, delta, type_infos)?;
+
+                                result_set.insert(InstanceType::Method {
+                                    type_: type_.clone(),
+                                    method_name,
+                                    instantiation: method_instantiation.clone(),
+                                });
+
+                                result_set.extend(omega)
                             }
                         }
-                        _ => continue,
                     }
-                }
+                } 
+                _ => continue
             }
         }
     }
