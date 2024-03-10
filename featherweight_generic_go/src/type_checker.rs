@@ -1,4 +1,5 @@
 use std::collections::{HashMap};
+use std::fmt::format;
 use common::RufegoError;
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
 
@@ -241,8 +242,34 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
     }
 
     // receiver type declared?
-    if type_infos.get(receiver.type_).is_none() {
-        return Err(RufegoError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
+    let receiver_type_info = match type_infos.get(receiver.type_) {
+        None => {
+            return Err(RufegoError { message: format!("Receiver type '{}' is not declared", receiver.type_) });
+        }
+        Some(type_info) => {
+            type_info
+        }
+    };
+
+    match receiver_type_info {
+        TypeInfo::Struct { bound, .. } => {
+            match type_formals_subtype_of(&receiver.instantiation, bound, type_infos) {
+                Ok(_) => {}
+                Err(error) => {
+                    let error_message = format!(
+                        "Receiver bound of type '{}' for method '{}' is not a subtype of declared bound: {}",
+                        receiver.type_,
+                        specification.name,
+                        error.message
+                    );
+
+                    return Err(RufegoError { message: error_message });
+                }
+            }
+        }
+        TypeInfo::Interface { .. } => {
+            return Err(RufegoError { message: format!("Receiver type '{}' is an interface type", receiver.type_) });
+        }
     }
 
     // build environment for type formals of receiver type
@@ -307,6 +334,16 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
             );
             return Err(RufegoError { message: error_message });
         }
+    }
+
+    Ok(())
+}
+
+fn type_formals_subtype_of(instantiation: &[GenericBinding], bound: &[GenericBinding], type_infos: &TypeInfos) -> Result<(), RufegoError> {
+    for (index, bound_binding) in bound.iter().enumerate() {
+        let instantiation_binding = instantiation.get(index).unwrap();
+
+        is_subtype_of(&instantiation_binding.type_, &bound_binding.type_, &TypeEnvironment::new(), type_infos)?;
     }
 
     Ok(())
@@ -428,6 +465,17 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                 type_infos,
             )?;
 
+            if method_specification.parameters.len() != parameter_expressions.len() {
+                let error_message = format!(
+                    "Method '{method}' for receiver type '{}' expects '{}' parameters but '{}' parameters were supplied",
+                    expression_type.name(),
+                    method_specification.parameters.len(),
+                    parameter_expressions.len()
+                );
+
+                return Err(RufegoError { message: error_message });
+            }
+
             for (index, parameter_expression) in parameter_expressions.iter().enumerate() {
                 // eval and substitute parameter expression
                 let actual_parameter_type = expression_well_formed(parameter_expression, variable_environment, delta, type_infos)?;
@@ -476,9 +524,10 @@ pub(crate) fn expression_well_formed<'a, 'b>(
             match type_info {
                 TypeInfo::Struct { bound, fields, .. } => {
                     if fields.len() != field_expressions.len() {
-                        let error_message = format!("Struct type '{name}' has '{}' fields but '{}' field values were provided",
-                                                    fields.len(),
-                                                    field_expressions.len()
+                        let error_message = format!(
+                            "Struct type '{name}' has '{}' fields but '{}' field values were provided",
+                            fields.len(),
+                            field_expressions.len()
                         );
                         return Err(RufegoError { message: error_message });
                     }
