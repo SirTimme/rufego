@@ -417,8 +417,11 @@ pub(crate) fn is_subtype_of<'a>(child_type: &FGType, parent_type: &FGType, types
                 return Err(RufegoError { message: format!("ERROR: Method {:?} of parent type {:?} is not implemented for child type {:?}", method.name, parent_type, child_type) });
             }
             Some(method_spec) => {
-                if method.return_type != method_spec.return_type {
-                    return Err(RufegoError { message: format!("ERROR: Method {:?} of parent type {:?} has return type {:?} but return type of child implementation is {:?}", method.name, parent_type, method.return_type, method_spec.return_type) });
+                match is_subtype_of(&method_spec.return_type, &method.return_type, types) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        return Err(RufegoError { message: format!("ERROR: Method {:?} of parent type {:?} has return type {:?} but return type of child implementation is {:?}", method.name, parent_type, method.return_type, method_spec.return_type) });
+                    }
                 }
 
                 if method.parameters.len() != method_spec.parameters.len() {
@@ -428,8 +431,19 @@ pub(crate) fn is_subtype_of<'a>(child_type: &FGType, parent_type: &FGType, types
                 for (index, method_parameter) in method.parameters.iter().enumerate() {
                     let child_method_parameter = method_spec.parameters.get(index).expect("Method parameter should be supplied");
 
-                    if child_method_parameter.type_ != method_parameter.type_ {
-                        return Err(RufegoError { message: format!("ERROR: Method parameter {:?} of method {:?} of parent type {:?} has type {:?} but parameter type of child implementation is {:?}", method_parameter.type_, method.name, parent_type, method.return_type, child_method_parameter) });
+                    match is_subtype_of(&child_method_parameter.type_, &method_parameter.type_, types) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            let error_message = format!(
+                                "Method parameter {:?} of method '{}' of parent type '{:?}' has type '{:?}' but parameter type of child implementation is '{:?}'",
+                                method_parameter.type_,
+                                method.name,
+                                parent_type,
+                                method.return_type,
+                                child_method_parameter
+                            );
+                            return Err(RufegoError { message: error_message });
+                        }
                     }
                 }
             }

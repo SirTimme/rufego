@@ -75,6 +75,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                         TypeInfo::Interface { bound, .. } => {
                             let substitution_map = generate_substitution(bound, instantiation)?;
                             let monomorphed_type = monomorph_type(type_, &substitution_map);
+                            
                             let monomorphed_type_declaration = monomorph_type_declaration(type_name, &substitution_map, &mue, type_infos)?;
 
                             write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
@@ -140,7 +141,8 @@ fn monomorph_type_declaration<'a, 'b>(
                         continue;
                     }
 
-                    let theta = generate_substitution(&method.bound, instantiation)?;
+                    let method_substitution = generate_substitution(&method.bound, instantiation)?;
+                    let theta = concat_substitutions(substitution_map, &method_substitution);
 
                     let monomorphed_method_name = monomorph_method_formal(method_name, &method.bound, &theta)?;
                     let monomorphed_method_signature = monomorph_method_signature(method, &theta)?;
@@ -173,7 +175,7 @@ fn generate_dummy_method_signature<'a, 'b>(
 
 fn generate_method_signature_hash(specification: &MethodSpecification, substitution_map: &SubstitutionMap) -> u64 {
     let mut hasher = DefaultHasher::new();
-
+    
     specification.name.hash(&mut hasher);
 
     for type_formal in &specification.bound {

@@ -1,11 +1,6 @@
 use std::collections::{HashMap};
-use std::fmt::format;
 use common::RufegoError;
 use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
-
-// TODO Self recursion in struct
-// TODO Präsi (Wann, Inhalt, Ablauf, Gespräch danach?)
-// TODO generic return type of interface --> how to implement by struct?
 
 // Type name -> Type Info
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
@@ -67,17 +62,19 @@ pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfo
                 Some(TypeInfo::Struct { methods, .. }) => {
                     // is the method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        let error_message = format!("Method declaration '{}' is not well-formed:\nMethod is already declared for receiver type '{}'",
-                                                    method.specification.name,
-                                                    method.receiver.type_
+                        let error_message = format!(
+                            "Method declaration '{}' is not well-formed:\nMethod is already declared for receiver type '{}'",
+                            method.specification.name,
+                            method.receiver.type_
                         );
                         return Err(RufegoError { message: error_message });
                     }
                 }
                 None => {
-                    let error_message = format!("Method declaration '{}' is not well-formed:\nProvided receiver type '{}' is not declared",
-                                                method.specification.name,
-                                                method.receiver.type_
+                    let error_message = format!(
+                        "Method declaration '{}' is not well-formed:\nProvided receiver type '{}' is not declared",
+                        method.specification.name,
+                        method.receiver.type_
                     );
                     return Err(RufegoError { message: error_message });
                 }
@@ -109,11 +106,12 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
             match method_well_formed(receiver, specification, body, type_infos) {
                 Ok(_) => {}
-                Err(rufego_error) => {
-                    let error_message = format!("Method '{}' for receiver type '{}' is not well-formed:\n{}",
-                                                specification.name,
-                                                receiver.type_,
-                                                rufego_error.message
+                Err(error) => {
+                    let error_message = format!(
+                        "Method '{}' for receiver type '{}' is not well-formed:\n{}",
+                        specification.name,
+                        receiver.type_,
+                        error.message
                     );
                     return Err(RufegoError { message: error_message });
                 }
@@ -130,16 +128,16 @@ fn declaration_well_formed(declaration: &Declaration, type_infos: &TypeInfos) ->
 
             match formal_type_well_formed(&HashMap::new(), &psi, type_infos) {
                 Ok(_) => {}
-                Err(rufego_error) => {
-                    return Err(RufegoError { message: format!("Type formals of literal '{name}' is not well-formed:\n{}", rufego_error.message) });
+                Err(error) => {
+                    return Err(RufegoError { message: format!("Type formals of literal '{name}' is not well-formed:\n{}", error.message) });
                 }
             }
 
             // type literal well-formed?
             match type_literal_well_formed(literal, &psi, type_infos) {
                 Ok(_) => {}
-                Err(rufego_error) => {
-                    return Err(RufegoError { message: format!("Literal '{name}' is not well-formed:\n{}", rufego_error.message) });
+                Err(error) => {
+                    return Err(RufegoError { message: format!("Literal '{name}' is not well-formed:\n{}", error.message) });
                 }
             }
         }
@@ -210,11 +208,12 @@ fn method_specification_well_formed(specification: &MethodSpecification, literal
         // parameter type well-formed in the concatenated environment?
         match type_well_formed(&parameter.type_, &delta, type_infos) {
             Ok(_) => {}
-            Err(rufego_error) => {
-                let error_message = format!("Method parameter '{}' with type '{}' is not well-formed:\n{}",
-                                            parameter.name,
-                                            parameter.type_.name(),
-                                            rufego_error.message
+            Err(error) => {
+                let error_message = format!(
+                    "Method parameter '{}' with type '{}' is not well-formed:\n{}",
+                    parameter.name,
+                    parameter.type_.name(),
+                    error.message
                 );
 
                 return Err(RufegoError { message: error_message });
@@ -225,8 +224,8 @@ fn method_specification_well_formed(specification: &MethodSpecification, literal
     // return type well-formed in the concatenated environment?
     match type_well_formed(&specification.return_type, &delta, type_infos) {
         Ok(_) => {}
-        Err(rufego_error) => {
-            return Err(RufegoError { message: format!("Return type '{}' is not well-formed:\n{}", specification.return_type.name(), rufego_error.message) });
+        Err(error) => {
+            return Err(RufegoError { message: format!("Return type '{}' is not well-formed:\n{}", specification.return_type.name(), error.message) });
         }
     }
 
@@ -318,19 +317,20 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
         Ok(expression_type) => {
             expression_type
         }
-        Err(rufego_error) => {
-            return Err(RufegoError { message: format!("Body expression of method is not well-formed:\n{}", rufego_error.message) });
+        Err(error) => {
+            return Err(RufegoError { message: format!("Body expression of method is not well-formed:\n{}", error.message) });
         }
     };
 
     // body expression subtype of return type in the concatenated environment?
     match is_subtype_of(&expression_type, &specification.return_type, &delta, type_infos) {
         Ok(_) => {}
-        Err(rufego_error) => {
-            let error_message = format!("Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
-                                        expression_type.name(),
-                                        specification.return_type.name(),
-                                        rufego_error.message
+        Err(error) => {
+            let error_message = format!(
+                "Body expression type '{}' is not a subtype of declared return type '{}':\n{}",
+                expression_type.name(),
+                specification.return_type.name(),
+                error.message
             );
             return Err(RufegoError { message: error_message });
         }
@@ -488,11 +488,12 @@ pub(crate) fn expression_well_formed<'a, 'b>(
                 // actual parameter type subtype from declared parameter type?
                 match is_subtype_of(&actual_parameter_type, &declared_parameter_type, delta, type_infos) {
                     Ok(_) => {}
-                    Err(rufego_error) => {
-                        let error_message = format!("Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
-                                                    actual_parameter_type.name(),
-                                                    declared_parameter_type.name(),
-                                                    rufego_error.message
+                    Err(error) => {
+                        let error_message = format!(
+                            "Parameter expression type '{}' is not a subtype of declared parameter type '{}':\n{}",
+                            actual_parameter_type.name(),
+                            declared_parameter_type.name(),
+                            error.message
                         );
                         return Err(RufegoError { message: error_message });
                     }
@@ -814,13 +815,25 @@ pub(crate) fn is_subtype_of<'a, 'b>(
                 (_, TypeInfo::Interface { .. }) => {
                     let child_methods = methods_of_type(child_type, type_environment, type_infos)?;
                     let parent_methods = methods_of_type(parent_type, type_environment, type_infos)?;
-
+                    
                     for parent_method in parent_methods.iter() {
-                        if !child_methods.contains(parent_method) {
-                            let error_message = format!("Method '{}' of parent type '{parent_name}' is not implemented for child type '{child_name}'",
-                                                        parent_method.name
-                            );
-                            return Err(RufegoError { message: error_message });
+                        match child_methods.iter().find(|method_spec| method_spec.name == parent_method.name) {
+                            None => {
+                                let error_message = format!(
+                                    "Method '{}' of parent type '{parent_name}' is not implemented for child type '{child_name}'",
+                                    parent_method.name
+                                );
+                                return Err(RufegoError { message: error_message });
+                            }
+                            Some(found_method_spec) => {
+                                for (index, parent_parameter_binding) in parent_method.parameters.iter().enumerate() {
+                                    let child_parameter_binding = found_method_spec.parameters.get(index).unwrap();
+
+                                    is_subtype_of(&child_parameter_binding.type_, &parent_parameter_binding.type_, type_environment, type_infos)?;
+                                }
+
+                                is_subtype_of(&found_method_spec.return_type, &parent_method.return_type, type_environment, type_infos)?;
+                            }
                         }
                     }
                 }

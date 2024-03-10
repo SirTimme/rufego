@@ -1,47 +1,27 @@
 package main;
 
-type Any(type) interface {
-    send(type)() int
-    receive(type)() Box()
+type Any(type) interface {}
+
+type Function(type A Any(), B Any()) interface {
+    apply(type)(param A) B
 }
 
-type Flight(type T Any(), V T) struct {
-    amount T
-    amno V
-}
+type Increment(type) struct {}
 
-type Box(type) struct {
-    amount int
-}
+type Rectangle(type) struct {}
 
-func (this Box(type)) send(type)() int {
-    return this.dummy(Square())(Square(){ 10 }).content
-}
-
-func (this Box(type)) receive(type)() Box() {
+func (this Rectangle(type)) apply(type)(rect Rectangle()) Rectangle() {
     return this
 }
 
-func (this Square(type)) send(type)() int {
-    return 1
+func (this Increment(type)) apply(type)(incr Increment()) Rectangle() {
+    return Rectangle(){}
 }
 
-func (this Square(type)) receive(type)() Box() {
-    return Box(){ 10 }
-}
-
-func (this Box(type)) dummy(type R Any())(param R) R {
-    return param
-}
-
-type Square(type) struct {
-    content int
-}
-
-func (this Flight(type T Any(), V T)) send(type)(param Any()) int {
-    return param.send()()
+func (this Increment(type)) entry(type)(function Function(Increment(), Rectangle())) Any() {
+    return function.apply()(this)
 }
 
 func main() {
-    _ = Flight(Box(), Box()){ Box(){ 5 }, Box(){ 5 } }.send()(Box(){ 42 }) + Box(){ 5 }.dummy(Box())(Box(){ 10 }).amount
+    _ = Increment(){}.entry()(Increment(){})
 }
