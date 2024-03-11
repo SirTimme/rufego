@@ -71,7 +71,7 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) 
             - the body is well typed in the appropriate environment
             - expression type implements the declared return type
  */
-fn check_declaration<'a>(declaration: &Declaration<'a>, types: &TypeInfos) -> Result<(), RufegoError> {
+fn check_declaration(declaration: &Declaration, types: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
         // is the type literal well formed?
         Declaration::Type { name, literal } => check_type_literal(name, literal, types)?,
@@ -125,7 +125,7 @@ fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, b
             - all its method specifications are well formed
             - all method names are unique
  */
-fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &TypeInfos) -> Result<(), RufegoError> {
+fn check_type_literal(name: &str, type_literal: &TypeLiteral, types: &TypeInfos) -> Result<(), RufegoError> {
     match type_literal {
         TypeLiteral::Struct { fields } => {
             for (index, field) in fields.iter().enumerate() {
@@ -164,7 +164,7 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &Typ
         - all formal parameters x are distinct
         - all the types t are declared
  */
-fn check_method_specification<'a>(method_specification: &MethodSpecification, types: &TypeInfos) -> Result<(), RufegoError> {
+fn check_method_specification(method_specification: &MethodSpecification, types: &TypeInfos) -> Result<(), RufegoError> {
     for (index, parameter) in method_specification.parameters.iter().enumerate() {
         // is the parameter type declared?
         check_type(&parameter.type_, types)?;
@@ -184,7 +184,7 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, ty
 /*
     Judgement t ok => type t is declared
 */
-fn check_type<'a>(type_: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
+fn check_type(type_: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
     // is the type declared?
     match type_ {
         Type::Int => (),
@@ -377,7 +377,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
     }
 }
 
-pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
+pub(crate) fn is_subtype_of(child_type: &Type, parent_type: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
     // a type is a subtype of itself
     if parent_type == child_type {
         return Ok(());
