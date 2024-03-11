@@ -123,7 +123,14 @@ fn monomorph_type_declaration<'a, 'b>(
 
     match type_infos.get(type_name).unwrap() {
         TypeInfo::Struct { fields, .. } => {
-            writeln!(&mut type_declaration_string, "struct {{").unwrap();
+            write!(&mut type_declaration_string, "struct {{").unwrap();
+            
+            if fields.is_empty() {
+                writeln!(&mut type_declaration_string, "}}\n").unwrap();
+                return Ok(type_declaration_string);
+            } else {
+                writeln!(&mut type_declaration_string).unwrap();
+            }
 
             for field in fields.iter() {
                 let monomorphed_field_type = monomorph_type(&field.type_, substitution_map);
@@ -133,8 +140,15 @@ fn monomorph_type_declaration<'a, 'b>(
             writeln!(&mut type_declaration_string, "}}\n").unwrap();
         }
         TypeInfo::Interface { methods, .. } => {
-            writeln!(&mut type_declaration_string, "interface {{").unwrap();
+            write!(&mut type_declaration_string, "interface {{").unwrap();
 
+            if methods.is_empty() {
+                writeln!(&mut type_declaration_string, "}}\n").unwrap();
+                return Ok(type_declaration_string);
+            } else {
+                writeln!(&mut type_declaration_string).unwrap();
+            }
+            
             for method in methods.iter() {
                 for (method_name, instantiation) in mue {
                     if method_name != &method.name {
@@ -296,15 +310,22 @@ fn monomorph_expression<'a, 'b>(
             let struct_type = GenericType::NamedType(name, instantiation.clone());
             let monomorphed_struct = monomorph_type(&struct_type, substitution);
             let mut monomorphed_field_expressions = Vec::new();
-
+            
             for field_expression in field_expressions {
                 let monomorphed_field = monomorph_expression(field_expression, substitution)?;
                 monomorphed_field_expressions.push(monomorphed_field);
             }
-
+            
             let mut expression_string = String::new();
 
-            write!(&mut expression_string, "{monomorphed_struct}{{ ").unwrap();
+            write!(&mut expression_string, "{monomorphed_struct}{{").unwrap();
+            
+            if field_expressions.is_empty() {
+                write!(&mut expression_string, "}}").unwrap();
+                return Ok(expression_string);
+            } else {
+                write!(&mut expression_string, " ").unwrap();
+            }
 
             for (index, field_expression) in monomorphed_field_expressions.iter().enumerate() {
                 write!(&mut expression_string, "{}", field_expression.as_str()).unwrap();
