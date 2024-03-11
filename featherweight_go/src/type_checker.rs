@@ -1,18 +1,18 @@
 use std::collections::{HashMap};
-use parser::{FGBinding, FGDeclaration, FGExpression, FGMethodDeclaration, FGMethodSpecification, FGProgram, FGType, FGTypeLiteral, RufegoError, TypeInfo};
+use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecification, Program, Type, TypeLiteral, RufegoError, TypeInfo};
 
-pub(crate) fn build_type_infos<'a>(program: &'a FGProgram<'a>) -> Result<HashMap<&'a str, TypeInfo<'a>>, RufegoError> {
+pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&'a str, TypeInfo<'a>>, RufegoError> {
     let mut types = HashMap::new();
 
     // check all type declarations
     for declaration in &program.declarations {
-        if let FGDeclaration::Type { name, literal } = declaration {
+        if let Declaration::Type { name, literal } = declaration {
             if types.contains_key(name) {
                 return Err(RufegoError { message: format!("ERROR: Type {:?} already declared", name) });
             } else {
                 let type_info = match literal {
-                    FGTypeLiteral::Struct { fields } => TypeInfo::Struct(fields, HashMap::new()),
-                    FGTypeLiteral::Interface { methods } => TypeInfo::Interface(methods),
+                    TypeLiteral::Struct { fields } => TypeInfo::Struct(fields, HashMap::new()),
+                    TypeLiteral::Interface { methods } => TypeInfo::Interface(methods),
                 };
 
                 types.insert(*name, type_info);
@@ -22,7 +22,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a FGProgram<'a>) -> Result<HashMap
 
     // check all method declarations
     for declaration in &program.declarations {
-        if let FGDeclaration::Method(method) = declaration {
+        if let Declaration::Method(method) = declaration {
             match types.get_mut(method.receiver.type_) {
                 None => {
                     return Err(RufegoError { message: format!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_) });
@@ -49,7 +49,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a FGProgram<'a>) -> Result<HashMap
         - all method declarations are distinct
         - body well formed in the empty context
  */
-pub(crate) fn check_program<'a>(program: &'a FGProgram<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<FGType<'a>, RufegoError> {
+pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, RufegoError> {
     // are the declarations well formed?
     for declaration in &program.declarations {
         check_declaration(declaration, types)?;
@@ -69,20 +69,20 @@ pub(crate) fn check_program<'a>(program: &'a FGProgram<'a>, types: &HashMap<&'a 
             - the body is well typed in the appropriate environment
             - expression type implements the declared return type
  */
-fn check_declaration<'a>(declaration: &FGDeclaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
     match declaration {
         // is the type literal well formed?
-        FGDeclaration::Type { name, literal } => check_type_literal(name, literal, types)?,
+        Declaration::Type { name, literal } => check_type_literal(name, literal, types)?,
         // is the method well formed?
-        FGDeclaration::Method(FGMethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
     }
 
     Ok(())
 }
 
-fn check_method(receiver: &FGBinding<&str>, specification: &FGMethodSpecification, body: &FGExpression, types: &HashMap<&str, TypeInfo>) -> Result<(), RufegoError> {
+fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), RufegoError> {
     // is the receiver type declared?
-    check_type(&FGType::Struct(receiver.type_), types)?;
+    check_type(&Type::Struct(receiver.type_), types)?;
 
     for (index, parameter) in specification.parameters.iter().enumerate() {
         // is the parameter type declared?
@@ -99,7 +99,7 @@ fn check_method(receiver: &FGBinding<&str>, specification: &FGMethodSpecificatio
 
     // build type context
     let mut context = HashMap::new();
-    context.insert(receiver.name, FGType::Struct(receiver.type_));
+    context.insert(receiver.name, Type::Struct(receiver.type_));
 
     for parameter in &specification.parameters {
         context.insert(parameter.name, parameter.type_.clone());
@@ -123,9 +123,9 @@ fn check_method(receiver: &FGBinding<&str>, specification: &FGMethodSpecificatio
             - all its method specifications are well formed
             - all method names are unique
  */
-fn check_type_literal<'a>(name: &'a str, type_literal: &FGTypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
     match type_literal {
-        FGTypeLiteral::Struct { fields } => {
+        TypeLiteral::Struct { fields } => {
             for (index, field) in fields.iter().enumerate() {
                 // is the field type declared?
                 check_type(&field.type_, types)?;
@@ -141,7 +141,7 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &FGTypeLiteral, types: &H
                 }
             }
         }
-        FGTypeLiteral::Interface { methods: method_specifications } => {
+        TypeLiteral::Interface { methods: method_specifications } => {
             for (index, method_specification) in method_specifications.iter().enumerate() {
                 // is the method specification well formed?
                 check_method_specification(method_specification, types)?;
@@ -162,7 +162,7 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &FGTypeLiteral, types: &H
         - all formal parameters x are distinct
         - all the types t are declared
  */
-fn check_method_specification<'a>(method_specification: &FGMethodSpecification, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_method_specification<'a>(method_specification: &MethodSpecification, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
     for (index, parameter) in method_specification.parameters.iter().enumerate() {
         // is the parameter type declared?
         check_type(&parameter.type_, types)?;
@@ -182,11 +182,11 @@ fn check_method_specification<'a>(method_specification: &FGMethodSpecification, 
 /*
     Judgement t ok => type t is declared
 */
-fn check_type<'a>(type_: &FGType, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_type<'a>(type_: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
     // is the type declared?
     match type_ {
-        FGType::Int => (),
-        FGType::Struct(name) => {
+        Type::Int => (),
+        Type::Struct(name) => {
             if !types.contains_key(name) {
                 return Err(RufegoError { message: format!("ERROR: Type '{name}' is undeclared") });
             }
@@ -196,9 +196,9 @@ fn check_type<'a>(type_: &FGType, types: &HashMap<&'a str, TypeInfo<'a>>) -> Res
     Ok(())
 }
 
-fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, FGType<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<FGType<'a>, RufegoError> {
+fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, RufegoError> {
     match expression {
-        FGExpression::Variable { name } => {
+        Expression::Variable { name } => {
             // variable known in this context?
             if let Some(var_type) = context.get(name) {
                 Ok(var_type.clone())
@@ -206,7 +206,7 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
                 Err(RufegoError { message: format!("ERROR: Variable {:?} is unknown in this context", name) })
             }
         }
-        FGExpression::MethodCall { expression, method, parameter_expressions } => {
+        Expression::MethodCall { expression, method, parameter_expressions } => {
             // evaluate type of the body expression
             let expression_type = check_expression(expression, context, types)?;
 
@@ -275,7 +275,7 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
                 }
             }
         }
-        FGExpression::StructLiteral { name, field_expressions } => {
+        Expression::StructLiteral { name, field_expressions } => {
             match types.get(name) {
                 None => {
                     Err(RufegoError { message: format!("ERROR: Struct literal {:?} is not declared", name) })
@@ -297,7 +297,7 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
                                 }
                             }
 
-                            Ok(FGType::Struct(name))
+                            Ok(Type::Struct(name))
                         }
                         TypeInfo::Interface(_) => {
                             Err(RufegoError { message: String::from("ERROR: An interface can't be instantiated") })
@@ -306,12 +306,12 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
                 }
             }
         }
-        FGExpression::Select { expression, field: field_var } => {
+        Expression::Select { expression, field: field_var } => {
             let type_name = match check_expression(expression, context, types)? {
-                FGType::Int => {
+                Type::Int => {
                     return Err(RufegoError { message: String::from("ERROR: Selections are only allowed on struct types") });
                 }
-                FGType::Struct(name) => name,
+                Type::Struct(name) => name,
             };
 
             let type_info = types.get(type_name).expect("Expression can't evaluate to an unknown type");
@@ -329,7 +329,7 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
                 }
             }
         }
-        FGExpression::TypeAssertion { expression, assert } => {
+        Expression::TypeAssertion { expression, assert } => {
             // asserted type declared?
             check_type(assert, types)?;
 
@@ -352,22 +352,22 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
 
             Ok(assert.clone())
         }
-        FGExpression::Number { .. } => {
-            Ok(FGType::Int)
+        Expression::Number { .. } => {
+            Ok(Type::Int)
         }
-        FGExpression::BinOp { lhs, rhs, .. } => {
+        Expression::BinOp { lhs, rhs, .. } => {
             let lhs_type = check_expression(lhs, context, types)?;
             let rhs_type = check_expression(rhs, context, types)?;
 
             match (lhs_type, rhs_type) {
-                (FGType::Int, FGType::Int) => Ok(FGType::Int),
-                (FGType::Struct(_), FGType::Int) => {
+                (Type::Int, Type::Int) => Ok(Type::Int),
+                (Type::Struct(_), Type::Int) => {
                     Err(RufegoError { message: String::from("ERROR: Left operand of a binary operation doesn't evaluate to an integer type") })
                 }
-                (FGType::Int, FGType::Struct(_)) => {
+                (Type::Int, Type::Struct(_)) => {
                     Err(RufegoError { message: String::from("ERROR: Right operand of a binary operation doesn't evaluate to an integer type") })
                 }
-                (FGType::Struct(_), FGType::Struct(_)) => {
+                (Type::Struct(_), Type::Struct(_)) => {
                     Err(RufegoError { message: String::from("ERROR: Both operands of a binary operation don't evaluate to an integer type") })
                 }
             }
@@ -375,23 +375,23 @@ fn check_expression<'a>(expression: &FGExpression<'a>, context: &HashMap<&str, F
     }
 }
 
-pub(crate) fn is_subtype_of<'a>(child_type: &FGType, parent_type: &FGType, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
     // a type is a subtype of itself
     if parent_type == child_type {
         return Ok(());
     }
 
-    if child_type == &FGType::Int {
+    if child_type == &Type::Int {
         return Err(RufegoError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
     }
 
     let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
 
     let methods = match parent_type {
-        FGType::Int => {
+        Type::Int => {
             return Err(RufegoError { message: String::from("ERROR: An integer value cant be the parent type of a struct value") });
         }
-        FGType::Struct(type_name) => {
+        Type::Struct(type_name) => {
             match types.get(type_name) {
                 None => {
                     return Err(RufegoError { message: format!("ERROR: Type {} is undeclared", type_name) });
@@ -453,10 +453,10 @@ pub(crate) fn is_subtype_of<'a>(child_type: &FGType, parent_type: &FGType, types
     Ok(())
 }
 
-fn type_name<'a>(type_: &'a FGType) -> &'a str {
+fn type_name<'a>(type_: &'a Type) -> &'a str {
     match type_ {
-        FGType::Int => "int",
-        FGType::Struct(name) => name,
+        Type::Int => "int",
+        Type::Struct(name) => name,
     }
 }
 

@@ -1,20 +1,27 @@
 use std::collections::HashMap;
-use parser::{FGExpression, FGType, FGValue, Operator, RufegoError, TypeInfo};
+use parser::{Expression, Type, Operator, RufegoError, TypeInfo};
 use type_checker::{is_subtype_of};
 
-pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a str, FGValue<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<FGValue<'a>, RufegoError> {
+
+#[derive(Clone, Debug)]
+pub enum Value<'a> {
+    Int(i64),
+    Struct(&'a str, Vec<Value<'a>>),
+}
+
+pub(crate) fn evaluate<'a>(expression: &Expression<'a>, context: &HashMap<&'a str, Value<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Value<'a>, RufegoError> {
     match expression {
-        FGExpression::Variable { name } => {
-            Ok(context.get(name).expect("Variable should exist in this context").clone())
+        Expression::Variable { name } => {
+            Ok(context.get(name).unwrap().clone())
         }
-        FGExpression::MethodCall { expression, method, parameter_expressions } => {
+        Expression::MethodCall { expression, method, parameter_expressions } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
-                FGValue::Int(_) => {
+                Value::Int(_) => {
                     Err(RufegoError { message: String::from("ERROR: Can't call a method on an integer value") })
                 }
-                FGValue::Struct(name, values) => {
+                Value::Struct(name, values) => {
                     let type_info = types.get(name).expect("Type name should exist");
 
                     match type_info {
@@ -23,7 +30,7 @@ pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a 
 
                             let mut local_context = HashMap::new();
 
-                            local_context.insert(method_declaration.receiver.name, FGValue::Struct(method_declaration.receiver.type_, values));
+                            local_context.insert(method_declaration.receiver.name, Value::Struct(method_declaration.receiver.type_, values));
 
                             for (index, expression) in parameter_expressions.iter().enumerate() {
                                 if let Some(parameter) = method_declaration.specification.parameters.get(index) {
@@ -43,7 +50,7 @@ pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a 
                 }
             }
         }
-        FGExpression::StructLiteral { name, field_expressions } => {
+        Expression::StructLiteral { name, field_expressions } => {
             let mut values = Vec::new();
 
             for expression in field_expressions {
@@ -51,16 +58,16 @@ pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a 
                 values.push(value);
             }
 
-            Ok(FGValue::Struct(name, values))
+            Ok(Value::Struct(name, values))
         }
-        FGExpression::Select { expression, field } => {
+        Expression::Select { expression, field } => {
             let value = evaluate(expression, context, types)?;
 
             match value {
-                FGValue::Int(_) => {
+                Value::Int(_) => {
                     Err(RufegoError { message: String::from("An integer value doesn't have fields") })
                 }
-                FGValue::Struct(name, struct_values) => {
+                Value::Struct(name, struct_values) => {
                     let type_info = types.get(name).expect("Value can only be a declared struct");
 
                     match type_info {
@@ -76,15 +83,15 @@ pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a 
                 }
             }
         }
-        FGExpression::TypeAssertion { expression, assert } => {
+        Expression::TypeAssertion { expression, assert } => {
             let value = evaluate(expression, context, types)?;
 
             let value_type = match value {
-                FGValue::Int(_) => {
-                    FGType::Int
+                Value::Int(_) => {
+                    Type::Int
                 }
-                FGValue::Struct(name, _) => {
-                    FGType::Struct(name)
+                Value::Struct(name, _) => {
+                    Type::Struct(name)
                 }
             };
 
@@ -97,18 +104,18 @@ pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a 
 
             Ok(value)
         }
-        FGExpression::Number { value } => {
-            Ok(FGValue::Int(*value))
+        Expression::Number { value } => {
+            Ok(Value::Int(*value))
         }
-        FGExpression::BinOp { lhs, operator, rhs } => {
+        Expression::BinOp { lhs, operator, rhs } => {
             let lhs_value = evaluate(lhs, context, types)?;
             let rhs_value = evaluate(rhs, context, types)?;
 
             match (lhs_value, rhs_value) {
-                (FGValue::Int(lhs), FGValue::Int(rhs)) => {
+                (Value::Int(lhs), Value::Int(rhs)) => {
                     match operator {
-                        Operator::Add => Ok(FGValue::Int(lhs + rhs)),
-                        Operator::Mul => Ok(FGValue::Int(lhs * rhs)),
+                        Operator::Add => Ok(Value::Int(lhs + rhs)),
+                        Operator::Mul => Ok(Value::Int(lhs * rhs)),
                     }
                 }
                 _ => {

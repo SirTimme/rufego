@@ -9,8 +9,8 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use interpreter::{evaluate};
-use parser::{FGExpression, FGProgram, FGValue, TypeInfo};
+use interpreter::{evaluate, Value};
+use parser::{Expression, Program, TypeInfo};
 use parser::language::parse;
 use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program};
@@ -40,37 +40,37 @@ fn lex_source(source: String) {
 fn parse_tokens(tokens: &[Token]) {
     match parse(tokens) {
         Ok(program) => create_type_infos(&program),
-        Err(parser_error) => {
-            eprintln!("Parsing failed with the following error: {parser_error}")
+        Err(error) => {
+            eprintln!("Parsing the program failed: {error}")
         }
     }
 }
 
-fn create_type_infos(program: &FGProgram) {
+fn create_type_infos(program: &Program) {
     match build_type_infos(program) {
         Ok(type_infos) => typecheck_program(program, &type_infos),
-        Err(type_info_error) => {
-            eprintln!("Creating the type infos failed with the following error: {:?}", type_info_error.message);
+        Err(error) => {
+            eprintln!("Creating the type infos failed with the following error: {}", error.message);
         }
     }
 }
 
-fn typecheck_program(program: &FGProgram, type_infos: &HashMap<&str, TypeInfo>) {
+fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match check_program(program, type_infos) {
         Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
-        Err(type_error) => {
-            eprintln!("Typechecking failed with the following error: {:?}", type_error.message);
+        Err(error) => {
+            eprintln!("Program is not well-formed: {}", error.message);
         }
     }
 }
 
-fn evaluate_program(expression: &FGExpression, context: &HashMap<&str, FGValue>, types: &HashMap<&str, TypeInfo>) {
+fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
     match evaluate(expression, context, types) {
         Ok(value) => {
-            println!("Program evaluates to {:?}", value);
+            println!("{:?}", value);
         }
-        Err(eval_error) => {
-            eprintln!("Evaluation of program failed with following error: {:?}", eval_error.message);
+        Err(error) => {
+            eprintln!("Evaluation of program failed: {}", error.message);
         }
     }
 }
