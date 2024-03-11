@@ -9,7 +9,7 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use interpreter::{evaluate, Value};
+use interpreter::{evaluate_expression, Value};
 use parser::{Expression, Program, TypeInfo};
 use parser::language::parse;
 use token::{LexerError, Token};
@@ -65,7 +65,7 @@ fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
 }
 
 fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
-    match evaluate(expression, context, types) {
+    match evaluate_expression(expression, context, types) {
         Ok(value) => {
             println!("{:?}", value);
         }

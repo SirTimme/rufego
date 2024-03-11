@@ -1,7 +1,9 @@
 use std::collections::{HashMap};
 use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecification, Program, Type, TypeLiteral, RufegoError, TypeInfo};
 
-pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&'a str, TypeInfo<'a>>, RufegoError> {
+pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
+
+pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, RufegoError> {
     let mut types = HashMap::new();
 
     // check all type declarations
@@ -49,7 +51,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<HashMap<&
         - all method declarations are distinct
         - body well formed in the empty context
  */
-pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, RufegoError> {
+pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
     // are the declarations well formed?
     for declaration in &program.declarations {
         check_declaration(declaration, types)?;
@@ -69,7 +71,7 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &HashMap<&'a st
             - the body is well typed in the appropriate environment
             - expression type implements the declared return type
  */
-fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_declaration<'a>(declaration: &Declaration<'a>, types: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
         // is the type literal well formed?
         Declaration::Type { name, literal } => check_type_literal(name, literal, types)?,
@@ -80,7 +82,7 @@ fn check_declaration<'a>(declaration: &Declaration<'a>, types: &HashMap<&'a str,
     Ok(())
 }
 
-fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &HashMap<&str, TypeInfo>) -> Result<(), RufegoError> {
+fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &TypeInfos) -> Result<(), RufegoError> {
     // is the receiver type declared?
     check_type(&Type::Struct(receiver.type_), types)?;
 
@@ -123,7 +125,7 @@ fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, b
             - all its method specifications are well formed
             - all method names are unique
  */
-fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &TypeInfos) -> Result<(), RufegoError> {
     match type_literal {
         TypeLiteral::Struct { fields } => {
             for (index, field) in fields.iter().enumerate() {
@@ -162,7 +164,7 @@ fn check_type_literal<'a>(name: &'a str, type_literal: &TypeLiteral, types: &Has
         - all formal parameters x are distinct
         - all the types t are declared
  */
-fn check_method_specification<'a>(method_specification: &MethodSpecification, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_method_specification<'a>(method_specification: &MethodSpecification, types: &TypeInfos) -> Result<(), RufegoError> {
     for (index, parameter) in method_specification.parameters.iter().enumerate() {
         // is the parameter type declared?
         check_type(&parameter.type_, types)?;
@@ -182,7 +184,7 @@ fn check_method_specification<'a>(method_specification: &MethodSpecification, ty
 /*
     Judgement t ok => type t is declared
 */
-fn check_type<'a>(type_: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+fn check_type<'a>(type_: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
     // is the type declared?
     match type_ {
         Type::Int => (),
@@ -196,7 +198,7 @@ fn check_type<'a>(type_: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Resul
     Ok(())
 }
 
-fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<Type<'a>, RufegoError> {
+fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
     match expression {
         Expression::Variable { name } => {
             // variable known in this context?
@@ -375,7 +377,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
     }
 }
 
-pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<(), RufegoError> {
+pub(crate) fn is_subtype_of<'a>(child_type: &Type, parent_type: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
     // a type is a subtype of itself
     if parent_type == child_type {
         return Ok(());
