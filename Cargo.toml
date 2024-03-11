@@ -2,5 +2,4 @@
 members = [
     "featherweight_go",
     "featherweight_generic_go",
-    "common"
 ]

@@ -1,6 +1,5 @@
 use std::collections::{HashMap};
-use common::RufegoError;
-use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, TypeLiteral};
+use parser::{Declaration, Expression, GenericBinding, GenericReceiver, GenericType, MethodDeclaration, MethodSpecification, Program, RufegoError, TypeLiteral};
 
 // Type name -> Type Info
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;

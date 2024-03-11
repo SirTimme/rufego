@@ -1,5 +1,5 @@
 use std::collections::{HashMap};
-use common::{FGBinding, FGDeclaration, FGExpression, FGMethodDeclaration, FGMethodSpecification, FGProgram, FGType, FGTypeLiteral, RufegoError, TypeInfo};
+use parser::{FGBinding, FGDeclaration, FGExpression, FGMethodDeclaration, FGMethodSpecification, FGProgram, FGType, FGTypeLiteral, RufegoError, TypeInfo};
 
 pub(crate) fn build_type_infos<'a>(program: &'a FGProgram<'a>) -> Result<HashMap<&'a str, TypeInfo<'a>>, RufegoError> {
     let mut types = HashMap::new();

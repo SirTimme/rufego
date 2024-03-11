@@ -1,6 +1,5 @@
 use Token;
 use std::fmt::Write;
-use common::Operator;
 
 peg::parser!(
     pub(crate) grammar language<'a>() for [Token<'a>] {
@@ -209,4 +208,28 @@ pub(crate) struct MethodSpecification<'a> {
     pub(crate) bound: Vec<GenericBinding<'a>>,
     pub(crate) parameters: Vec<GenericBinding<'a>>,
     pub(crate) return_type: GenericType<'a>,
+}
+
+#[derive(Debug)]
+pub struct RufegoError {
+    pub message: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Operator {
+    Add,
+    Mul,
+}
+
+impl Operator {
+    pub fn as_str(&self) -> String {
+        match self {
+            Operator::Add => {
+                String::from("+")
+            }
+            Operator::Mul => {
+                String::from("*")
+            }
+        }
+    }
 }

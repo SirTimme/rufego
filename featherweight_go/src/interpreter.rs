@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use common::{FGExpression, FGType, FGValue, Operator, RufegoError, TypeInfo};
+use parser::{FGExpression, FGType, FGValue, Operator, RufegoError, TypeInfo};
 use type_checker::{is_subtype_of};
 
 pub(crate) fn evaluate<'a>(expression: &FGExpression<'a>, context: &HashMap<&'a str, FGValue<'a>>, types: &HashMap<&'a str, TypeInfo<'a>>) -> Result<FGValue<'a>, RufegoError> {

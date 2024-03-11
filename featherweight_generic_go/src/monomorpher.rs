@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use common::{RufegoError};
 use interpreter::{body_of, concat_substitutions};
-use parser::{Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program};
+use parser::{Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program, RufegoError};
 use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
 use std::fmt::{Debug, Write};
 use std::fs::File;

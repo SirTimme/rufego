@@ -1,6 +1,5 @@
 extern crate logos;
 extern crate peg;
-extern crate common;
 
 mod token;
 mod parser;
@@ -10,8 +9,8 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use common::{FGExpression, FGProgram, FGValue, TypeInfo};
 use interpreter::{evaluate};
+use parser::{FGExpression, FGProgram, FGValue, TypeInfo};
 use parser::language::parse;
 use token::{LexerError, Token};
 use type_checker::{build_type_infos, check_program};

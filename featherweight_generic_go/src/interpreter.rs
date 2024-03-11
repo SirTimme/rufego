@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use common::{Operator, RufegoError};
-use parser::{Expression, GenericBinding, GenericType};
+use parser::{Expression, GenericBinding, GenericType, Operator, RufegoError};
 use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeInfo, TypeInfos};
 
 #[derive(Clone, Debug)]
