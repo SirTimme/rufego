@@ -74,7 +74,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                         TypeInfo::Interface { bound, .. } => {
                             let substitution_map = generate_substitution(bound, instantiation)?;
                             let monomorphed_type = monomorph_type(type_, &substitution_map);
-                            
+
                             let monomorphed_type_declaration = monomorph_type_declaration(type_name, &substitution_map, &mue, type_infos)?;
 
                             write!(&mut program_code, "type {monomorphed_type} {monomorphed_type_declaration}").unwrap();
@@ -86,6 +86,20 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
                 if let GenericType::NamedType(type_name, instantiation) = type_ {
                     if let TypeInfo::Struct { bound, methods, .. } = type_infos.get(type_name).unwrap() {
                         let method = methods.get(method_name).unwrap();
+
+                        match type_formal_nomono(bound, instantiation) {
+                            Ok(_) => {}
+                            Err(error) => {
+                                return Err(RufegoError { message: format!("Type bound of receiver '{}' is not monomorphisable:\n{}", type_.name(), error.message) });
+                            }
+                        }
+
+                        match type_formal_nomono(&method.specification.bound, method_instantiation) {
+                            Ok(_) => {}
+                            Err(error) => {
+                                return Err(RufegoError { message: format!("Type bound of method '{method_name}' for receiver '{}' is not monomorphisable:\n{}", type_.name(), error.message) });
+                            }
+                        }
 
                         let type_substitution = generate_substitution(bound, instantiation)?;
                         let method_substitution = generate_substitution(&method.specification.bound, method_instantiation)?;
@@ -112,6 +126,51 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
     Ok(program_code)
 }
 
+fn type_formal_nomono(bound: &[GenericBinding], instantiation: &[GenericType]) -> Result<(), RufegoError> {
+    for (index, bound_binding) in bound.iter().enumerate() {
+        let instantiated_type = instantiation.get(index).unwrap();
+
+        match type_nomono(&bound_binding.type_, instantiated_type) {
+            Ok(_) => {}
+            Err(error) => {
+                return Err(RufegoError { message: format!("Type '{}' is not monomorphisable:\n{}", &bound_binding.type_.name(), error.message) });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn type_nomono(bound_type: &GenericType, instantiated_type: &GenericType) -> Result<(), RufegoError> {
+    let instantiated_type_parameters = collect_type_parameters(instantiated_type);
+    
+    if instantiated_type_parameters.contains(&bound_type.name()) {
+        return Err(RufegoError { message: format!("Type parameter '{}' occurs in type '{}'", bound_type.name(), instantiated_type.name()) });
+    }
+
+    Ok(())
+}
+
+fn collect_type_parameters<'a>(type_: &'a GenericType) -> Vec<&'a str> {
+    let mut type_parameters = Vec::new();
+
+    match type_ {
+        GenericType::TypeParameter(name) => {
+            type_parameters.push(*name)
+        }
+        GenericType::NamedType(_, instantiation) => {
+            for inner_type in instantiation {
+                for inner_type_parameter in collect_type_parameters(inner_type) {
+                    type_parameters.push(inner_type_parameter);
+                }
+            }
+        }
+        GenericType::NumberType => {}
+    }
+
+    type_parameters
+}
+
 fn monomorph_type_declaration<'a, 'b>(
     type_name: &'a str,
     substitution_map: &'a SubstitutionMap<'b>,
@@ -123,7 +182,7 @@ fn monomorph_type_declaration<'a, 'b>(
     match type_infos.get(type_name).unwrap() {
         TypeInfo::Struct { fields, .. } => {
             write!(&mut type_declaration_string, "struct {{").unwrap();
-            
+
             if fields.is_empty() {
                 writeln!(&mut type_declaration_string, "}}\n").unwrap();
                 return Ok(type_declaration_string);
@@ -147,7 +206,7 @@ fn monomorph_type_declaration<'a, 'b>(
             } else {
                 writeln!(&mut type_declaration_string).unwrap();
             }
-            
+
             for method in methods.iter() {
                 for (method_name, instantiation) in mue {
                     if method_name != &method.name {
@@ -188,7 +247,7 @@ fn generate_dummy_method_signature<'a, 'b>(
 
 fn generate_method_signature_hash(specification: &MethodSpecification, substitution_map: &SubstitutionMap) -> u64 {
     let mut hasher = DefaultHasher::new();
-    
+
     specification.name.hash(&mut hasher);
 
     for type_formal in &specification.bound {
@@ -309,16 +368,16 @@ fn monomorph_expression<'a, 'b>(
             let struct_type = GenericType::NamedType(name, instantiation.clone());
             let monomorphed_struct = monomorph_type(&struct_type, substitution);
             let mut monomorphed_field_expressions = Vec::new();
-            
+
             for field_expression in field_expressions {
                 let monomorphed_field = monomorph_expression(field_expression, substitution)?;
                 monomorphed_field_expressions.push(monomorphed_field);
             }
-            
+
             let mut expression_string = String::new();
 
             write!(&mut expression_string, "{monomorphed_struct}{{").unwrap();
-            
+
             if field_expressions.is_empty() {
                 write!(&mut expression_string, "}}").unwrap();
                 return Ok(expression_string);
@@ -685,7 +744,7 @@ fn s_closure<'a, 'b>(
                             }
                         }
                     }
-                } 
+                }
                 _ => continue
             }
         }

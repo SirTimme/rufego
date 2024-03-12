@@ -251,6 +251,16 @@ fn method_well_formed(receiver: &GenericReceiver, specification: &MethodSpecific
 
     match receiver_type_info {
         TypeInfo::Struct { bound, .. } => {
+            if receiver.instantiation.len() != bound.len() {
+                let error_message = format!(
+                    "Receiver type '{}' expects '{}' type parameters, but '{}' type parameters were provided",
+                    receiver.type_,
+                    bound.len(),
+                    receiver.instantiation.len()
+                );
+                return Err(RufegoError { message: error_message });
+            }
+
             match type_formals_subtype_of(&receiver.instantiation, bound, type_infos) {
                 Ok(_) => {}
                 Err(error) => {
@@ -814,7 +824,7 @@ pub(crate) fn is_subtype_of<'a, 'b>(
                 (_, TypeInfo::Interface { .. }) => {
                     let child_methods = methods_of_type(child_type, type_environment, type_infos)?;
                     let parent_methods = methods_of_type(parent_type, type_environment, type_infos)?;
-                    
+
                     for parent_method in parent_methods.iter() {
                         match child_methods.iter().find(|method_spec| method_spec.name == parent_method.name) {
                             None => {
