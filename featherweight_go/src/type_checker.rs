@@ -54,7 +54,12 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos
 pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
     // are the declarations well formed?
     for declaration in &program.declarations {
-        check_declaration(declaration, types)?;
+        match check_declaration(declaration, types) {
+            Ok(_) => {}
+            Err(error) => {
+                return Err(RufegoError { message: format!("Declaration is not well-formed:\n{}", error.message) });
+            }
+        }
     }
 
     // is the body well formed in the empty context?
@@ -74,7 +79,14 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) 
 fn check_declaration(declaration: &Declaration, types: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
         // is the type literal well formed?
-        Declaration::Type { name, literal } => check_type_literal(name, literal, types)?,
+        Declaration::Type { name, literal } => {
+            match check_type_literal(name, literal, types) {
+                Ok(_) => {}
+                Err(error) => {
+                    return Err(RufegoError { message: format!("Type literal '{name}' is not well-formed:\n{}", error.message) });
+                }
+            }
+        },
         // is the method well formed?
         Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
     }
@@ -134,12 +146,12 @@ fn check_type_literal(name: &str, type_literal: &TypeLiteral, types: &TypeInfos)
 
                 // no self recursion in structs
                 if type_name(&field.type_) == name {
-                    return Err(RufegoError { message: format!("ERROR: Struct {name} has self recursion on field {:?} which is forbidden", field.name) });
+                    return Err(RufegoError { message: format!("Struct type is not well-formed:\nSelf recursion on field with name '{}'", field.name) });
                 }
 
                 // are the field names distinct?
                 if fields.iter().skip(index + 1).any(|element| element.name == field.name) {
-                    return Err(RufegoError { message: format!("ERROR: Duplicate field name {:?} for struct {:?}", field.name, name) });
+                    return Err(RufegoError { message: format!("Struct type is not well-formed:\nDuplicate field name '{}'", field.name) });
                 }
             }
         }
