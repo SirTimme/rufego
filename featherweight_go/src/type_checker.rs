@@ -4,20 +4,20 @@ use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecific
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
 
 pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, RufegoError> {
-    let mut types = HashMap::new();
+    let mut type_infos = HashMap::new();
 
     // check all type declarations
     for declaration in &program.declarations {
         if let Declaration::Type { name, literal } = declaration {
-            if types.contains_key(name) {
-                return Err(RufegoError { message: format!("ERROR: Type {:?} already declared", name) });
+            if type_infos.contains_key(name) {
+                return Err(RufegoError { message: format!("Type {:?} already declared", name) });
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields } => TypeInfo::Struct(fields, HashMap::new()),
                     TypeLiteral::Interface { methods } => TypeInfo::Interface(methods),
                 };
 
-                types.insert(*name, type_info);
+                type_infos.insert(*name, type_info);
             }
         }
     }
@@ -25,7 +25,7 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos
     // check all method declarations
     for declaration in &program.declarations {
         if let Declaration::Method(method) = declaration {
-            match types.get_mut(method.receiver.type_) {
+            match type_infos.get_mut(method.receiver.type_) {
                 None => {
                     return Err(RufegoError { message: format!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_) });
                 }
@@ -42,19 +42,12 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos
         }
     }
 
-    Ok(types)
+    Ok(type_infos)
 }
 
-/*
-    Judgement P ok => program P is well formed
-        - all type declarations are distinct
-        - all method declarations are distinct
-        - body well formed in the empty context
- */
-pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
-    // are the declarations well formed?
+pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
     for declaration in &program.declarations {
-        match check_declaration(declaration, types) {
+        match declaration_well_formed(declaration, types) {
             Ok(_) => {}
             Err(error) => {
                 return Err(RufegoError { message: format!("Declaration is not well-formed:\n{}", error.message) });
@@ -62,7 +55,7 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) 
         }
     }
 
-    // is the body well formed in the empty context?
+    // is the body well-formed in the empty context?
     check_expression(&program.expression, &HashMap::new(), types)
 }
 
@@ -76,7 +69,7 @@ pub(crate) fn check_program<'a>(program: &'a Program<'a>, types: &'a TypeInfos) 
             - the body is well typed in the appropriate environment
             - expression type implements the declared return type
  */
-fn check_declaration(declaration: &Declaration, types: &TypeInfos) -> Result<(), RufegoError> {
+fn declaration_well_formed(declaration: &Declaration, types: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
         // is the type literal well formed?
         Declaration::Type { name, literal } => {

@@ -1,19 +1,7 @@
 use logos::Logos;
 
-#[derive(Debug, Clone, PartialEq, Default)]
-pub(crate) enum LexerError {
-    #[default]
-    InvalidToken
-}
-
-impl From<String> for LexerError {
-    fn from(_: String) -> Self {
-        LexerError::InvalidToken
-    }
-}
-
 #[derive(Logos, Debug, Copy, Clone)]
-#[logos(error = LexerError, skip r"[ \r\t\n\f]+")]
+#[logos(skip r"[ \r\t\n\f]+")]
 pub(crate) enum Token<'a> {
     #[token("(")]
     LeftParenthesis,

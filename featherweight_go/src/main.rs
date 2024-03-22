@@ -9,72 +9,51 @@ mod interpreter;
 use std::collections::{HashMap};
 use std::fs::read_to_string;
 use logos::Logos;
-use interpreter::{evaluate_expression, Value};
-use parser::{Expression, Program, TypeInfo};
-use parser::language::parse;
-use token::{LexerError, Token};
-use type_checker::{build_type_infos, check_program};
+use interpreter::{evaluate_expression};
+use parser::language::{parse_program};
+use token::{Token};
+use type_checker::{build_type_infos, program_well_formed};
 
 fn main() {
-    read_input("featherweight_go/input/input.go");
-}
-
-fn read_input(filename: &str) {
-    match read_to_string(filename) {
-        Ok(source) => lex_source(source),
+    let source_file = match read_to_string("featherweight_go/input/input.go") {
+        Ok(source) => source,
         Err(error) => {
-            eprintln!("Reading in the source file failed with the following error: {error}")
+            eprintln!("Reading the source file failed: {error}");
+            return;
         }
-    }
-}
+    };
 
-fn lex_source(source: String) {
-    match Token::lexer(&source).collect::<Result<Vec<Token>, LexerError>>() {
-        Ok(tokens) => {
-            parse_tokens(&tokens)
-        },
-        Err(lexer_error) => {
-            eprintln!("Lexing the source failed with the following error: {:?}", lexer_error)
+    let tokens = match Token::lexer(&source_file).collect::<Result<Vec<Token>, ()>>() {
+        Ok(tokens) => tokens,
+        Err(_) => {
+            eprintln!("Lexing the source failed");
+            return;
         }
-    }
-}
-
-fn parse_tokens(tokens: &[Token]) {
-    match parse(tokens) {
-        Ok(program) => {
-            create_type_infos(&program)
-        },
+    };
+    
+    let program = match parse_program(&tokens) {
+        Ok(program) => program,
         Err(error) => {
-            eprintln!("Parsing the program failed: {error}")
+            eprintln!("Parsing the program failed: {error}");
+            return;
         }
-    }
-}
+    };
 
-fn create_type_infos(program: &Program) {
-    match build_type_infos(program) {
-        Ok(type_infos) => typecheck_program(program, &type_infos),
+    let type_infos = match build_type_infos(&program) {
+        Ok(type_infos) => type_infos,
         Err(error) => {
-            eprintln!("Creating the type infos failed with the following error: {}", error.message);
+            eprintln!("Creating the type infos failed: {}", error.message);
+            return;
         }
-    }
-}
+    };
 
-fn typecheck_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
-    match check_program(program, type_infos) {
-        Ok(_) => evaluate_program(&program.expression, &HashMap::new(), type_infos),
-        Err(error) => {
-            eprintln!("Program is not well-formed:\n{}", error.message);
+    match program_well_formed(&program, &type_infos) {
+        Ok(_) => {
+            match evaluate_expression(&program.expression, &HashMap::new(), &type_infos) {
+                Ok(value) => println!("{:#?}", value),
+                Err(error) => eprintln!("Evaluating the program failed: {}", error.message),
+            }
         }
-    }
-}
-
-fn evaluate_program(expression: &Expression, context: &HashMap<&str, Value>, types: &HashMap<&str, TypeInfo>) {
-    match evaluate_expression(expression, context, types) {
-        Ok(value) => {
-            println!("{:#?}", value);
-        }
-        Err(error) => {
-            eprintln!("Evaluation of program failed: {}", error.message);
-        }
+        Err(error) => eprintln!("Program is not well-formed:\n{}", error.message),
     }
 }
