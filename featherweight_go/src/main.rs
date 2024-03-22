@@ -48,12 +48,20 @@ fn main() {
     };
 
     match program_well_formed(&program, &type_infos) {
-        Ok(_) => {
-            match evaluate_expression(&program.expression, &HashMap::new(), &type_infos) {
-                Ok(value) => println!("{:#?}", value),
-                Err(error) => eprintln!("Evaluating the program failed: {}", error.message),
-            }
-        }
-        Err(error) => eprintln!("Program is not well-formed:\n{}", error.message),
-    }
+        Ok(_) => {}
+        Err(error) => {
+            eprintln!("Program is not well-formed:\n{}", error.message);
+            return;
+        },
+    };
+
+    let value = match evaluate_expression(&program.expression, &HashMap::new(), &type_infos) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!("Evaluating the program failed: {}", error.message);
+            return;
+        },
+    };
+
+    println!("{:#?}", value);
 }
