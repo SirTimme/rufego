@@ -11,7 +11,7 @@ Run the FG interpreter. It interprets the input specified in the file "input.go"
 cargo run --bin featherweight_go
 ```
 
-### Featherweight Generic Go
+## Featherweight Generic Go
 
 Run the FGG interpreter. It interprets the input specified in the file "input.go" located under [featherweight_generic_go/input/input.go](featherweight_generic_go/input/input.go).
 
@@ -19,7 +19,7 @@ Run the FGG interpreter. It interprets the input specified in the file "input.go
 cargo run --bin featherweight_generic_go
 ```
 
-### Monomorphization
+## Monomorphization
 
 The monomorpher automatically run when the FGG interpreter is executed and monomorphs the specified program in [featherweight_generic_go/input/input.go](featherweight_generic_go/input/input.go) and outputs the result in [output/output.go](output/output.go).
 
