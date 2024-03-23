@@ -1,11 +1,11 @@
-use Token;
 use std::fmt::Write;
+use crate::token::Token;
 
 peg::parser!(
-    pub(crate) grammar language<'a>() for [Token<'a>] {
-        use Token::*;
+    pub grammar language<'a>() for [Token<'a>] {
+        use crate::token::Token::*;
 
-        pub(crate) rule parse() -> Program<'a>
+        pub rule parse() -> Program<'a>
             = [Package] [Main] [Semicolon] declarations:declaration()* [Function] [Main] [LeftParenthesis] [RightParenthesis] [LeftCurlyBrace] [Underscore] [Equals] expression:expression() [RightCurlyBrace] {
                 Program { declarations, expression: Box::new(expression) }
             }
@@ -76,13 +76,13 @@ peg::parser!(
 );
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Program<'a> {
-    pub(crate) declarations: Vec<Declaration<'a>>,
-    pub(crate) expression: Box<Expression<'a>>,
+pub struct Program<'a> {
+    pub declarations: Vec<Declaration<'a>>,
+    pub expression: Box<Expression<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Declaration<'a> {
+pub enum Declaration<'a> {
     Type {
         name: &'a str,
         bound: Vec<GenericBinding<'a>>,
@@ -92,14 +92,14 @@ pub(crate) enum Declaration<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MethodDeclaration<'a> {
-    pub(crate) receiver: GenericReceiver<'a>,
-    pub(crate) specification: MethodSpecification<'a>,
-    pub(crate) body: Expression<'a>,
+pub struct MethodDeclaration<'a> {
+    pub receiver: GenericReceiver<'a>,
+    pub specification: MethodSpecification<'a>,
+    pub body: Expression<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum TypeLiteral<'a> {
+pub enum TypeLiteral<'a> {
     Struct {
         fields: Vec<GenericBinding<'a>>
     },
@@ -116,7 +116,7 @@ pub enum GenericType<'a> {
 }
 
 impl<'a> GenericType<'a> {
-    pub(crate) fn name(&self) -> &'a str {
+    pub fn name(&self) -> &'a str {
         match self {
             GenericType::TypeParameter(type_parameter) => type_parameter,
             GenericType::NamedType(name, _) => name,
@@ -156,20 +156,20 @@ impl<'a> GenericType<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) struct GenericBinding<'a> {
-    pub(crate) name: &'a str,
-    pub(crate) type_: GenericType<'a>,
+pub struct GenericBinding<'a> {
+    pub name: &'a str,
+    pub type_: GenericType<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct GenericReceiver<'a> {
-    pub(crate) name: &'a str,
-    pub(crate) type_: &'a str,
-    pub(crate) instantiation: Vec<GenericBinding<'a>>,
+pub struct GenericReceiver<'a> {
+    pub name: &'a str,
+    pub type_: &'a str,
+    pub instantiation: Vec<GenericBinding<'a>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Expression<'a> {
+pub enum Expression<'a> {
     Variable {
         name: &'a str
     },
@@ -203,11 +203,11 @@ pub(crate) enum Expression<'a> {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub(crate) struct MethodSpecification<'a> {
-    pub(crate) name: &'a str,
-    pub(crate) bound: Vec<GenericBinding<'a>>,
-    pub(crate) parameters: Vec<GenericBinding<'a>>,
-    pub(crate) return_type: GenericType<'a>,
+pub struct MethodSpecification<'a> {
+    pub name: &'a str,
+    pub bound: Vec<GenericBinding<'a>>,
+    pub parameters: Vec<GenericBinding<'a>>,
+    pub return_type: GenericType<'a>,
 }
 
 #[derive(Debug)]

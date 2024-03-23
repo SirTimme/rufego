@@ -1,17 +1,15 @@
-extern crate logos;
 extern crate peg;
+extern crate common;
 
-mod token;
 mod parser;
 mod type_checker;
 mod interpreter;
 
 use std::collections::{HashMap};
 use std::fs::read_to_string;
-use logos::Logos;
+use common::token::{lex_program};
 use interpreter::{evaluate_expression};
 use parser::language::{parse_program};
-use token::{Token};
 use type_checker::{build_type_infos, program_well_formed};
 
 fn main() {
@@ -23,10 +21,10 @@ fn main() {
         }
     };
 
-    let tokens = match Token::lexer(&source_file).collect::<Result<Vec<Token>, ()>>() {
+    let tokens = match lex_program(source_file.as_str()) {
         Ok(tokens) => tokens,
-        Err(_) => {
-            eprintln!("Lexing the source failed");
+        Err(error) => {
+            eprintln!("{}", error.message);
             return;
         }
     };

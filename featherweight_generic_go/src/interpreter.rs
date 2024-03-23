@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use parser::{Expression, GenericBinding, GenericType, Operator, RufegoError};
-use type_checker::{generate_substitution, is_subtype_of, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeInfo, TypeInfos};
+use common::parser::{Expression, GenericType, Operator, RufegoError};
+use common::{body_of, generate_substitution, is_subtype_of, substitute_struct_fields, TypeInfo, TypeInfos};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Value<'a> {
@@ -138,71 +138,6 @@ pub(crate) fn evaluate<'a, 'b>(expression: &'a Expression<'b>, variables: &'a Ha
     }
 }
 
-fn substitute_expression<'a, 'b>(expression: &'a Expression<'b>, substitution: &'a SubstitutionMap<'b>) -> Result<Expression<'b>, RufegoError> {
-    match expression {
-        Expression::Variable { name } => {
-            Ok(Expression::Variable { name })
-        }
-        Expression::MethodCall { expression, method, instantiation, parameter_expressions } => {
-            let substituted_expression = substitute_expression(expression, substitution)?;
-            let mut substituted_parameter_expressions = Vec::new();
-
-            for parameter_expression in parameter_expressions {
-                let substituted_parameter = substitute_expression(parameter_expression, substitution)?;
-                substituted_parameter_expressions.push(substituted_parameter);
-            }
-
-            let mut substituted_instantiation = Vec::new();
-
-            for instantiated_type in instantiation {
-                let substituted_instantiation_type = substitute_type_parameter(instantiated_type, substitution);
-                substituted_instantiation.push(substituted_instantiation_type)
-            }
-
-            Ok(Expression::MethodCall {
-                expression: Box::new(substituted_expression),
-                method,
-                instantiation: substituted_instantiation,
-                parameter_expressions: substituted_parameter_expressions,
-            })
-        }
-        Expression::StructLiteral { name, instantiation, field_expressions } => {
-            let mut substituted_field_expressions = Vec::new();
-
-            for field_expression in field_expressions {
-                let substituted_field = substitute_expression(field_expression, substitution)?;
-                substituted_field_expressions.push(substituted_field)
-            }
-
-            let mut substituted_instantiation = Vec::new();
-
-            for instantiated_type in instantiation {
-                let substituted_instantiation_type = substitute_type_parameter(instantiated_type, substitution);
-                substituted_instantiation.push(substituted_instantiation_type)
-            }
-
-            Ok(Expression::StructLiteral { name, instantiation: substituted_instantiation, field_expressions: substituted_field_expressions })
-        }
-        Expression::Select { expression, field } => {
-            let substituted_expression = substitute_expression(expression, substitution)?;
-
-            Ok(Expression::Select { expression: Box::new(substituted_expression), field })
-        }
-        Expression::TypeAssertion { expression, assert } => {
-            let substituted_expression = substitute_expression(expression, substitution)?;
-            let substituted_assert = substitute_type_parameter(assert, substitution);
-
-            Ok(Expression::TypeAssertion { expression: Box::new(substituted_expression), assert: substituted_assert })
-        }
-        Expression::Number { .. } => Ok(expression.clone()),
-        Expression::BinOp { lhs, operator, rhs } => {
-            let lhs_substituted = substitute_expression(lhs, substitution)?;
-            let rhs_substituted = substitute_expression(rhs, substitution)?;
-
-            Ok(Expression::BinOp { lhs: Box::new(lhs_substituted), operator: *operator, rhs: Box::new(rhs_substituted) })
-        }
-    }
-}
 
 fn type_of<'a>(value: &'a Value) -> GenericType<'a> {
     match value {
@@ -215,50 +150,3 @@ fn type_of<'a>(value: &'a Value) -> GenericType<'a> {
     }
 }
 
-pub fn concat_substitutions<'a, 'b>(phi: &'a SubstitutionMap<'b>, psi: &'a SubstitutionMap<'b>) -> SubstitutionMap<'b> {
-    let mut theta = SubstitutionMap::new();
-
-    for (key, value) in phi {
-        theta.insert(key, value.clone());
-    }
-
-    for (key, value) in psi {
-        theta.insert(key, value.clone());
-    }
-
-    theta
-}
-
-pub(crate) fn body_of<'a, 'b>(
-    receiver_name: &'b str,
-    receiver_instantiation: &'a Vec<GenericType<'b>>,
-    method_name: &'a str,
-    method_instantiation: &'a Vec<GenericType<'b>>,
-    type_infos: &'a TypeInfos<'b>,
-) -> Result<(Vec<GenericBinding<'b>>, Expression<'b>), RufegoError> {
-    match type_infos.get(receiver_name).unwrap() {
-        TypeInfo::Struct { bound, methods, .. } => {
-            let method_declaration = methods.get(method_name).unwrap();
-
-            let struct_substitution = generate_substitution(bound, receiver_instantiation)?;
-            let method_substitution = generate_substitution(&method_declaration.specification.bound, method_instantiation)?;
-
-            let theta = concat_substitutions(&struct_substitution, &method_substitution);
-
-            let substituted_expression = substitute_expression(&method_declaration.body, &theta)?;
-
-            let mut parameters = Vec::new();
-
-            parameters.push(GenericBinding { name: method_declaration.receiver.name, type_: GenericType::NamedType(receiver_name, receiver_instantiation.clone()) });
-
-            for parameter in &method_declaration.specification.parameters {
-                parameters.push(parameter.clone());
-            }
-
-            Ok((parameters, substituted_expression))
-        }
-        TypeInfo::Interface { .. } => {
-            Err(RufegoError { message: format!("Tried to read body of interface method with type '{receiver_name}' ") })
-        }
-    }
-}

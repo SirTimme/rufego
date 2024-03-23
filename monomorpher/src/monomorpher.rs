@@ -1,12 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
-use interpreter::{body_of, concat_substitutions};
-use parser::{Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program, RufegoError};
-use type_checker::{expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
 use std::fmt::{Debug, Write};
 use std::fs::File;
 use std::io::Write as IOWrite;
+use common::parser::{Expression, GenericBinding, GenericType, MethodDeclaration, MethodSpecification, Program, RufegoError};
+use common::{body_of, concat_substitutions, expression_well_formed, generate_substitution, is_subtype_of, methods_of_type, substitute_struct_fields, substitute_type_parameter, SubstitutionMap, TypeEnvironment, TypeInfo, TypeInfos, VariableEnvironment};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum InstanceType<'a> {
@@ -120,7 +119,7 @@ pub(crate) fn monomorph_program<'a, 'b>(program: &'a Program<'b>, type_infos: &'
     writeln!(&mut program_code, "   _ = {}", monomorphed_expression.as_str()).unwrap();
     writeln!(&mut program_code, "}}").unwrap();
 
-    let mut file = File::create("output/output.go").unwrap();
+    let mut file = File::create("monomorpher/output/output.go").unwrap();
     file.write_all(program_code.as_bytes()).unwrap();
 
     Ok(program_code)

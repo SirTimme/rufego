@@ -21,5 +21,9 @@ cargo run --bin featherweight_generic_go
 
 ## Monomorphization
 
-The monomorpher automatically run when the FGG interpreter is executed and monomorphs the specified program in [featherweight_generic_go/input/input.go](featherweight_generic_go/input/input.go) and outputs the result in [output/output.go](output/output.go).
+Run the monomorpher. It monomorphs the input specified in the file "input.go" located under [monomorpher/input/input.go](monomorpher/input/input.go) and saves the output under [monomorpher/output/output.go](monomorpher/output/output.go).
 
+
+```
+cargo run --bin monomorpher
+```

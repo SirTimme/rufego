@@ -1,20 +1,16 @@
-extern crate logos;
+extern crate common;
 
 use std::collections::HashMap;
 use std::fs::read_to_string;
-use logos::Logos;
+use common::parser::language::parse;
+use common::parser::{Expression, Program};
+use common::token::{lex_program, Token};
+use common::{create_type_infos, TypeInfo};
 use interpreter::{evaluate, Value};
-use monomorpher::monomorph_program;
-use parser::language::parse;
-use parser::{Expression, Program};
-use token::{LexerError, Token};
-use type_checker::{create_type_infos, program_well_formed, TypeInfo, TypeInfos};
+use type_checker::{program_well_formed};
 
-mod token;
-mod parser;
 mod type_checker;
 mod interpreter;
-mod monomorpher;
 
 fn main() {
     read_input("featherweight_generic_go/input/input.go");
@@ -28,9 +24,9 @@ fn read_input(filename: &str) {
 }
 
 fn lex_source(source: String) {
-    match Token::lexer(&source).collect::<Result<Vec<Token>, LexerError>>() {
+    match lex_program(source.as_str()) {
         Ok(tokens) => parse_tokens(&tokens),
-        Err(lexer_error) => eprintln!("{:?}", lexer_error),
+        Err(lexer_error) => eprintln!("{}", lexer_error.message),
     }
 }
 
@@ -53,9 +49,7 @@ fn build_type_infos(program: &Program) {
 fn check_program(program: &Program, type_infos: &HashMap<&str, TypeInfo>) {
     match program_well_formed(program, type_infos) {
         Ok(_) => {
-            run_program(&program.expression, &HashMap::new(), type_infos);
-            monomorph(program, type_infos);
-            
+            run_program(&program.expression, &HashMap::new(), type_infos);            
         },
         Err(error) => eprintln!("Program is not well-formed:\n{}", error.message),
     }
@@ -65,14 +59,5 @@ fn run_program(expression: &Expression, context: &HashMap<&str, Value>, type_inf
     match evaluate(expression, context, type_infos) {
         Ok(value) => println!("{:#?}", value),
         Err(error) => eprintln!("Runtime evaluation of expression failed:\n{}", error.message),
-    }
-}
-
-fn monomorph(program: &Program, type_infos: &TypeInfos) {
-    match monomorph_program(program, type_infos) {
-        Ok(_) => {}
-        Err(error) => {
-            eprintln!("Error: {}", error.message)
-        }
     }
 }

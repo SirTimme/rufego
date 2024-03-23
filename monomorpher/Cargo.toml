@@ -1,6 +1,7 @@
 [package]
-name = "featherweight_generic_go"
-version = "0.0.1"
+name = "monomorpher"
+version = "0.1.0"
+edition = "2021"
 
 [dependencies]
 common = { path = "../common" }

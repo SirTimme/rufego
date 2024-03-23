@@ -1,8 +1,9 @@
 use logos::Logos;
+use crate::parser::RufegoError;
 
 #[derive(Logos, Debug, Copy, Clone)]
 #[logos(skip r"[ \r\t\n\f]+")]
-pub(crate) enum Token<'a> {
+pub enum Token<'a> {
     #[token("(")]
     LeftParenthesis,
     #[token(")")]
@@ -39,12 +40,17 @@ pub(crate) enum Token<'a> {
     Package,
     #[token("type")]
     Type,
-    #[token("var")]
-    Var,
     #[token("return")]
     Return,
     #[token("main")]
     Main,
     #[token("int")]
     Int,
+}
+
+pub fn lex_program(source: &str) -> Result<Vec<Token>, RufegoError> {
+    match Token::lexer(source).collect::<Result<Vec<Token>, ()>>() {
+        Ok(tokens) => Ok(tokens),
+        Err(_) => Err(RufegoError { message: String::from("Lexing the source failed")}),
+    }
 }
