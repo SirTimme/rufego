@@ -10,7 +10,7 @@ use std::fs::read_to_string;
 use common::token::{lex_program};
 use interpreter::{evaluate_expression};
 use parser::language::{parse_program};
-use type_checker::{build_type_infos, program_well_formed};
+use type_checker::{create_type_infos, program_well_formed};
 
 fn main() {
     let source_file = match read_to_string("featherweight_go/input/input.go") {
@@ -37,7 +37,7 @@ fn main() {
         }
     };
 
-    let type_infos = match build_type_infos(&program) {
+    let type_infos = match create_type_infos(&program) {
         Ok(type_infos) => type_infos,
         Err(error) => {
             eprintln!("Creating the type infos failed: {}", error.message);

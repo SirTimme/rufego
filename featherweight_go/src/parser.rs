@@ -142,6 +142,15 @@ pub enum Type<'a> {
     Struct(&'a str),
 }
 
+impl Type<'_> {
+    pub fn name(&self) -> &str {
+        match self {
+            Type::Int => "int",
+            Type::Struct(name) => name,
+        }
+    }
+}
+
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum TypeInfo<'a> {
     Struct(&'a Vec<Binding<'a, Type<'a>>>, HashMap<&'a str, &'a MethodDeclaration<'a>>),

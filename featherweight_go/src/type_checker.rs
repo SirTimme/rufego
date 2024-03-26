@@ -3,21 +3,22 @@ use parser::{Binding, Declaration, Expression, MethodDeclaration, MethodSpecific
 
 pub(crate) type TypeInfos<'a> = HashMap<&'a str, TypeInfo<'a>>;
 
-pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, RufegoError> {
+pub(crate) fn create_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos, RufegoError> {
     let mut type_infos = HashMap::new();
 
     // check all type declarations
     for declaration in &program.declarations {
-        if let Declaration::Type { name, literal } = declaration {
-            if type_infos.contains_key(name) {
-                return Err(RufegoError { message: format!("Type {:?} already declared", name) });
+        if let Declaration::Type { name: type_name, literal } = declaration {
+            if type_infos.contains_key(type_name) {
+                let error_message = format!("Type declaration '{type_name}' is not well-formed: Type '{type_name}' was already declared");
+                return Err(RufegoError { message: error_message });
             } else {
                 let type_info = match literal {
                     TypeLiteral::Struct { fields } => TypeInfo::Struct(fields, HashMap::new()),
                     TypeLiteral::Interface { methods } => TypeInfo::Interface(methods),
                 };
 
-                type_infos.insert(*name, type_info);
+                type_infos.insert(*type_name, type_info);
             }
         }
     }
@@ -27,15 +28,29 @@ pub(crate) fn build_type_infos<'a>(program: &'a Program<'a>) -> Result<TypeInfos
         if let Declaration::Method(method) = declaration {
             match type_infos.get_mut(method.receiver.type_) {
                 None => {
-                    return Err(RufegoError { message: format!("ERROR: Can't declare method {:?} for unknown type {:?}", method.specification.name, method.receiver.type_) });
+                    let error_message = format!(
+                        "Method declaration '{}' is not well-formed:\nProvided receiver type '{}' is not declared",
+                        method.specification.name,
+                        method.receiver.type_
+                    );
+                    return Err(RufegoError { message: error_message });
                 }
                 Some(TypeInfo::Interface(..)) => {
-                    return Err(RufegoError { message: format!("ERROR: Can't implement interface method {:?} for interface {:?}", method.specification.name, method.receiver.type_) });
+                    let error_message = format!(
+                        "Method declaration '{}' is not well-formed:\nProvided receiver type '{}' is an interface",
+                        method.specification.name,
+                        method.receiver.type_
+                    );
+                    return Err(RufegoError { message: error_message });
                 }
                 Some(TypeInfo::Struct(.., methods)) => {
-                    // method already declared?
                     if methods.insert(method.specification.name, method).is_some() {
-                        return Err(RufegoError { message: format!("ERROR: Duplicate declaration of method '{}' for type {:?}", method.specification.name, method.receiver.type_) });
+                        let error_message = format!(
+                            "Method declaration '{}' is not well-formed:\nMethod is already declared for receiver type '{}'",
+                            method.specification.name,
+                            method.receiver.type_
+                        );
+                        return Err(RufegoError { message: error_message });
                     }
                 }
             }
@@ -49,45 +64,47 @@ pub(crate) fn program_well_formed<'a>(program: &'a Program<'a>, types: &'a TypeI
     for declaration in &program.declarations {
         match declaration_well_formed(declaration, types) {
             Ok(_) => {}
-            Err(error) => {
-                return Err(RufegoError { message: format!("Declaration is not well-formed:\n{}", error.message) });
-            }
+            Err(error) => return Err(RufegoError { message: format!("Declaration is not well-formed:\n{}", error.message) }),
         }
     }
 
     // is the body well-formed in the empty context?
-    check_expression(&program.expression, &HashMap::new(), types)
+    match expression_well_formed(&program.expression, &HashMap::new(), types) {
+        Ok(type_) => Ok(type_),
+        Err(error) => Err(RufegoError { message: format!("Body expression of 'main' is not well-formed:\n{}", error.message) }),
+    }
 }
 
-/*
-    Judgement D ok => declaration D is well formed
-        Type literal:
-            - its type literal is well formed
-        Method:
-            - its receiver and formal parameters are distinct
-            - all types are declared
-            - the body is well typed in the appropriate environment
-            - expression type implements the declared return type
- */
 fn declaration_well_formed(declaration: &Declaration, types: &TypeInfos) -> Result<(), RufegoError> {
     match declaration {
-        // is the type literal well formed?
         Declaration::Type { name, literal } => {
+            // type literal well-formed?
             match check_type_literal(name, literal, types) {
                 Ok(_) => {}
+                Err(error) => return Err(RufegoError { message: format!("Type literal '{name}' is not well-formed:\n{}", error.message) }),
+            }
+        }
+        Declaration::Method(MethodDeclaration { receiver, specification, body }) => {
+            // method well-formed?
+            match method_well_formed(receiver, specification, body, types) {
+                Ok(_) => {}
                 Err(error) => {
-                    return Err(RufegoError { message: format!("Type literal '{name}' is not well-formed:\n{}", error.message) });
+                    let error_message = format!(
+                        "Method declaration '{}' for receiver type '{}' is not well-formed:\n{}",
+                        specification.name,
+                        receiver.type_,
+                        error.message
+                    );
+                    return Err(RufegoError { message: error_message });
                 }
             }
-        },
-        // is the method well formed?
-        Declaration::Method(MethodDeclaration { receiver, specification, body }) => check_method(receiver, specification, body, types)?,
+        }
     }
 
     Ok(())
 }
 
-fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &TypeInfos) -> Result<(), RufegoError> {
+fn method_well_formed(receiver: &Binding<&str>, specification: &MethodSpecification, body: &Expression, types: &TypeInfos) -> Result<(), RufegoError> {
     // is the receiver type declared?
     check_type(&Type::Struct(receiver.type_), types)?;
 
@@ -97,7 +114,7 @@ fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, b
 
         // are the parameter names distinct?
         if receiver.name == parameter.name || specification.parameters.iter().skip(index + 1).any(|element| element.name == parameter.name) {
-            return Err(RufegoError { message: format!("ERROR: Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
+            return Err(RufegoError { message: format!("Duplicate parameter name {:?} in method {:?}", parameter.name, specification.name) });
         }
     }
 
@@ -113,7 +130,7 @@ fn check_method(receiver: &Binding<&str>, specification: &MethodSpecification, b
     }
 
     // evaluate type of body expression
-    let expression_type = check_expression(body, &context, types)?;
+    let expression_type = expression_well_formed(body, &context, types)?;
 
     // is the body type at least a subtype of the return type?
     is_subtype_of(&expression_type, &specification.return_type, types)?;
@@ -138,7 +155,7 @@ fn check_type_literal(name: &str, type_literal: &TypeLiteral, types: &TypeInfos)
                 check_type(&field.type_, types)?;
 
                 // no self recursion in structs
-                if type_name(&field.type_) == name {
+                if field.type_.name() == name {
                     return Err(RufegoError { message: format!("Struct type is not well-formed:\nSelf recursion on field with name '{}'", field.name) });
                 }
 
@@ -203,7 +220,7 @@ fn check_type(type_: &Type, types: &TypeInfos) -> Result<(), RufegoError> {
     Ok(())
 }
 
-fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
+fn expression_well_formed<'a>(expression: &Expression<'a>, context: &HashMap<&str, Type<'a>>, types: &'a TypeInfos) -> Result<Type<'a>, RufegoError> {
     match expression {
         Expression::Variable { name } => {
             // variable known in this context?
@@ -215,10 +232,10 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
         }
         Expression::MethodCall { expression, method, parameter_expressions } => {
             // evaluate type of the body expression
-            let expression_type = check_expression(expression, context, types)?;
+            let expression_type = expression_well_formed(expression, context, types)?;
 
             // typeinfo for the body expression
-            let type_info = types.get(type_name(&expression_type)).expect("ERROR: Expression can't evaluate to an unknown type");
+            let type_info = types.get(&expression_type.name()).expect("ERROR: Expression can't evaluate to an unknown type");
 
             match type_info {
                 TypeInfo::Struct(.., methods) => {
@@ -237,7 +254,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
                             for (index, expression) in parameter_expressions.iter().enumerate() {
                                 if let Some(parameter) = declaration.specification.parameters.get(index) {
                                     // evaluate type of the supplied parameter expression
-                                    let expression_type = check_expression(expression, context, types)?;
+                                    let expression_type = expression_well_formed(expression, context, types)?;
 
                                     // is the parameter at least a subtype of the method parameter?
                                     is_subtype_of(&expression_type, &parameter.type_, types)?;
@@ -266,7 +283,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
                             for (index, expression) in parameter_expressions.iter().enumerate() {
                                 if let Some(parameter) = method_specification.parameters.get(index) {
                                     // evaluate type of the supplied parameter expression
-                                    let expression_type = check_expression(expression, context, types)?;
+                                    let expression_type = expression_well_formed(expression, context, types)?;
 
                                     // is the parameter at least a subtype of the method parameter?
                                     is_subtype_of(&expression_type, &parameter.type_, types)?;
@@ -298,7 +315,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
                             for (index, expression) in field_expressions.iter().enumerate() {
                                 if let Some(field) = fields.get(index) {
                                     // evaluate type of supplied parameter
-                                    let field_type = check_expression(expression, context, types)?;
+                                    let field_type = expression_well_formed(expression, context, types)?;
 
                                     is_subtype_of(&field_type, &field.type_, types)?;
                                 }
@@ -314,7 +331,7 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             }
         }
         Expression::Select { expression, field: field_var } => {
-            let type_name = match check_expression(expression, context, types)? {
+            let type_name = match expression_well_formed(expression, context, types)? {
                 Type::Int => {
                     return Err(RufegoError { message: String::from("ERROR: Selections are only allowed on struct types") });
                 }
@@ -340,11 +357,11 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             // asserted type declared?
             check_type(assert, types)?;
 
-            let assert_type_info = types.get(type_name(assert)).expect("Asserted type was checked beforehand");
+            let assert_type_info = types.get(assert.name()).expect("Asserted type was checked beforehand");
 
-            let expression_type = check_expression(expression, context, types)?;
+            let expression_type = expression_well_formed(expression, context, types)?;
 
-            let body_type_info = types.get(type_name(&expression_type)).expect("Expression can't evaluate to an unknown type");
+            let body_type_info = types.get(&expression_type.name()).expect("Expression can't evaluate to an unknown type");
 
             match (assert_type_info, body_type_info) {
                 (TypeInfo::Interface(..), TypeInfo::Struct(..)) => {
@@ -363,8 +380,8 @@ fn check_expression<'a>(expression: &Expression<'a>, context: &HashMap<&str, Typ
             Ok(Type::Int)
         }
         Expression::BinOp { lhs, rhs, .. } => {
-            let lhs_type = check_expression(lhs, context, types)?;
-            let rhs_type = check_expression(rhs, context, types)?;
+            let lhs_type = expression_well_formed(lhs, context, types)?;
+            let rhs_type = expression_well_formed(rhs, context, types)?;
 
             match (lhs_type, rhs_type) {
                 (Type::Int, Type::Int) => Ok(Type::Int),
@@ -392,7 +409,7 @@ pub(crate) fn is_subtype_of(child_type: &Type, parent_type: &Type, types: &TypeI
         return Err(RufegoError { message: String::from("ERROR: An integer value cant be the child type of a struct value") });
     }
 
-    let child_type_info = types.get(type_name(child_type)).expect("Function is only called with declared types");
+    let child_type_info = types.get(child_type.name()).expect("Function is only called with declared types");
 
     let methods = match parent_type {
         Type::Int => {
@@ -459,11 +476,3 @@ pub(crate) fn is_subtype_of(child_type: &Type, parent_type: &Type, types: &TypeI
 
     Ok(())
 }
-
-fn type_name<'a>(type_: &'a Type) -> &'a str {
-    match type_ {
-        Type::Int => "int",
-        Type::Struct(name) => name,
-    }
-}
-
