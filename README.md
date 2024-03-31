@@ -23,7 +23,6 @@ cargo run --bin featherweight_generic_go
 
 Run the monomorpher. It monomorphs the input specified in the file "input.go" located under [monomorpher/input/input.go](monomorpher/input/input.go) and saves the output under [monomorpher/output/output.go](monomorpher/output/output.go).
 
-
 ```
 cargo run --bin monomorpher
 ```
