@@ -1,16 +1,17 @@
-extern crate peg;
 extern crate common;
+extern crate peg;
+
+use std::collections::HashMap;
+use std::fs::read_to_string;
+
+use common::token::lex_program;
+use interpreter::evaluate_expression;
+use parser::language::parse_program;
+use type_checker::{create_type_infos, program_well_formed};
 
 mod parser;
 mod type_checker;
 mod interpreter;
-
-use std::collections::{HashMap};
-use std::fs::read_to_string;
-use common::token::{lex_program};
-use interpreter::{evaluate_expression};
-use parser::language::{parse_program};
-use type_checker::{create_type_infos, program_well_formed};
 
 fn main() {
     let source_file = match read_to_string("featherweight_go/input/input.go") {
@@ -24,7 +25,7 @@ fn main() {
     let tokens = match lex_program(source_file.as_str()) {
         Ok(tokens) => tokens,
         Err(error) => {
-            eprintln!("{}", error.message);
+            eprintln!("Lexing the program failed: {}", error.message);
             return;
         }
     };
